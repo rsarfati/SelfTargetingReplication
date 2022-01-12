@@ -57,16 +57,10 @@ end
 
 """
 ```
-function sup_t(vcov::Matrix{T}, conf::F64; draws=10000) where T<:F64
+bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
 ```
-Helper function to implement sup-t confidence bands.
+Bootstrap confidence intervals!
 """
-function sup_t(V::Matrix{T}; conf::T = 0.95, draws::Int64 = 1000) where T<:F64
-    N = size(V, 1)
-    d = MvNormal(zeros(N), V)
-    return quantile(vec(maximum(abs.(rand(d, draws)), dims = 2)), conf)
-end
-
 function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
     N = size(V, 1)
     d = MvNormal(zeros(N), V)
@@ -77,6 +71,19 @@ function bs_σ(V::T; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
     d = Normal(0, V)
     return quantile(abs.(rand(d, draws)), conf)
 end
+
+"""
+```
+function sup_t(vcov::Matrix{T}, conf::F64; draws=10000) where T<:F64
+```
+Helper function to implement sup-t confidence bands.
+"""
+function sup_t(V::Matrix{T}; conf::T = 0.95, draws::Int64 = 1000) where T<:F64
+    N = size(V, 1)
+    d = MvNormal(zeros(N), V)
+    return quantile(vec(maximum(abs.(rand(d, draws)), dims = 2)), conf)
+end
+
 
 """
 ```
@@ -140,7 +147,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
 
         # Construct sup-t confidence bands
         if bootstrap_SEs
-            df_SEs = DataFrame(:Y => Y, :X => X, :Kx => K.((x0 .- X) ./ h))
+            df_SEs = DataFrame(:Y => Y, :X => X, :Kx => 1 ./ K.((x0 .- X) ./ h))
 
             # Case: not clustering SEs
             V = if isempty(cluster_on)
@@ -173,7 +180,7 @@ end
 """
 Helper to coerce DataFrame types to desired format.
 """
-function convert_types(df, colstypes::Vector{<:Type})
+function convert_types(df, colstypes)
     for (c, t) in colstypes
         df[!, c] = convert.(t, df[!, c])
     end
