@@ -11,14 +11,13 @@ you run a regression with a link function AND cluster your standard errors.
 """
 function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
                    group::Symbol=Symbol(), clust::Symbol=Symbol(),
-                   wts::Vector{F64} = Vector{F64}())
+                   wts::Vector{F64} = Vector{F64}(), glm_kwargs = Dict())
 
     # Input checks
     if link == ProbitLink()
-        @assert group != Symbol() "Require `group` kwarg for probit. Check inputs."
+        @assert group != Symbol() "The `group` kwarg is required for probit. Check inputs."
     end
 
-    glm_kwargs = Dict()
     # Option to include weights for observations
     if !isempty(wts); glm_kwargs[:wts] = wts end
     # Specify strata for FEs in GLM.jl lingo
@@ -30,13 +29,13 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
     # Compute mean of dependent variable
     μ_r_y = mean(r.model.rr.y)
 
-    # Reason this function is complicated: clustering SEs...
+    # Here is the reason this function is complicated: clustering SEs...
     vcov_i, r_fields = if clust == Symbol()
-        # Case: no need to custer SEs (i.e. scatter plots)
+        # Case 1: no need to custer SEs (i.e. scatter plots)
         vcov(r), reg(df, f)
     else
-        # Case: convert SEs to be cluster-robust
-        c_t = typeof(df[1,clust])
+        # Case 2: convert SEs to be cluster-robust
+        c_t = typeof(df[1, clust])
         vcov(CRHC0(convert(Array{c_t}, df[:, clust])), r),
         reg(df, f, Vcov.cluster(clust))
     end
@@ -65,7 +64,7 @@ Bootstrap confidence intervals!
 function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
     N = size(V, 1)
     d = MvNormal(zeros(N), V)
-    @assert 0 < ind <= N "Keyword ind does not correspond to a variable; check input."
+    @assert 0 < ind <= N "Provided `ind` doesn't correspond to a valid explanatory variable; check input."
     return quantile(rand(d, draws)[ind,:], [1-conf, conf])
 end
 function bs_σ(V::T; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
@@ -79,7 +78,7 @@ function sup_t(vcov::Matrix{T}, conf::F64; draws=10000) where T<:F64
 ```
 Helper function to implement sup-t confidence bands.
 """
-function sup_t(V::Matrix{T}; conf::T = 0.95, draws::Int64 = 1000) where T<:F64
+function sup_t(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
     N = size(V, 1)
     d = MvNormal(zeros(N), V)
     return quantile(vec(maximum(abs.(rand(d, draws)), dims = 2)), conf)
@@ -110,10 +109,10 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     N_g = length(x0_grid)
     cluster_on = (clust == Symbol()) ? Vector() : df[:, clust]
 
-    # Normal kernel
+    # Normal kernel:
     K_normal(z::F64) = (2*pi)^(-0.5) * exp(-z^2 / 2)
 
-    # Select bandwidth:
+    # Select bandwidth (if not given as input)
     h0 = if typeof(bw) <: F64
         bw
     else
@@ -134,10 +133,10 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
 
     """
     Local linear regression smoother (Fan 1992).
-    Keyword available for computing boostrap confidence intervals.
+    Keyword option for computing boostrap confidence intervals.
     """
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
-                   K::Function = K_normal, bootstrap_SEs::Bool = bootstrap_SEs,
+                   K::Function = K_normal, bootstrap_SEs::Bool = true,
                    cluster_on::Vector = Vector(), N_bs::Int64 = 500)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
