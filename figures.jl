@@ -4,7 +4,7 @@
 function figure_1(; labels::Dict{String,String} = labels, bins::Int64 = 0)
 
     # Load Data
-    df = DataFrame(load("input_data/matched_baseline.dta"))
+    df = DataFrame(load("input/matched_baseline.dta"))
     rename!(df, [:logconsumption  => :logc])
 
     bins = if bins == 0; size(df, 1) else bins end
@@ -44,13 +44,13 @@ function figure_1(; labels::Dict{String,String} = labels, bins::Int64 = 0)
     p1 = binscatter(df, @formula(lambda ~ logc), bins, legend = false,
                     xlabel = labels["logc"], xrange = (11,16), yrange = (0.,0.4),
                     ylabel = "(Pred.) Probability to Receive Benefits")
-    Plots.savefig(p1, "plots/fig1A.png")
+    Plots.savefig(p1, "output/plots/fig1A.png")
 
     p2 = binscatter(df, @formula(mu_pmt ~ PMTSCORE), bins, legend = false,
                     xlabel = "Pred. Log Consumption (PMT score)",
                     ylabel = "(Pred.) Probability to Receive Benefits",
                     xrange = (11,15), yrange = (0,1))
-    Plots.savefig(p2, "plots/fig1B.png")
+    Plots.savefig(p2, "output/plots/fig1B.png")
 
     return df, p1, p2
 end
@@ -60,7 +60,7 @@ end
 ###########################
 function figure_2(; labels::Dict{String,String} = labels)
     # Load and clean data
-    df = rename!(DataFrame(load("input_data/matched_baseline.dta")),
+    df = rename!(DataFrame(load("input/matched_baseline.dta")),
                  [:logconsumption  => :logc])
     df = clean(df[df.selftargeting .== 1, :], [:logc, :showup, :hhea],
                out_type = Dict([:logc, :showup] .=> F64))
@@ -72,7 +72,7 @@ function figure_2(; labels::Dict{String,String} = labels)
              xl = labels["logc"], yl = "Show-up Probability", lw = 2.0, lc = :cyan3)
     plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
 
-    savefig(p, "plots/fig2.png")
+    savefig(p, "output/plots/fig2.png")
     return p
 end
 
@@ -81,7 +81,7 @@ end
 ###########################
 function figure_3(; labels::Dict{String,String} = labels)
     # Load and clean data
-    df = rename!(DataFrame(load("input_data/matched_baseline.dta")),
+    df = rename!(DataFrame(load("input/matched_baseline.dta")),
                  [:logconsumption  => :logc])
     df = clean(df[df.selftargeting .== 1, :], [:logc, :PMTSCORE, :showup, :hhea],
                out_type = Dict([:showup, :logc, :PMTSCORE] .=> F64))
@@ -94,7 +94,7 @@ function figure_3(; labels::Dict{String,String} = labels)
               xl = "Observable Component of Log Consumption (PMT Score)",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pA, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
-    Plots.savefig(pA, "plots/fig3A.png")
+    Plots.savefig(pA, "output/plots/fig3A.png")
     @show pA
 
     r = reg(df, @formula(logc ~ PMTSCORE), cluster(:hhea), save = :residuals)
@@ -108,7 +108,7 @@ function figure_3(; labels::Dict{String,String} = labels)
               xl = "Unobservable Component of Log Consumption",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pB, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
-    Plots.savefig(pB, "plots/fig3B.png")
+    Plots.savefig(pB, "output/plots/fig3B.png")
 
     return pA, pB
 end

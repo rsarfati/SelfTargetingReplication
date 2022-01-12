@@ -4,8 +4,8 @@
 function table_1(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load data, open output pipe
-    df = DataFrame(load("input_data/matched_baseline.dta"))
-    io = open("tables/Table1.tex", "w")
+    df = DataFrame(load("input/matched_baseline.dta"))
+    io = open("output/tables/Table1.tex", "w")
 
     # Directly write LaTeX table
     write(io, "\\begin{tabular}{lrrr}\\toprule\n & \\multicolumn{1}{c}")
@@ -36,8 +36,8 @@ end
 function table_3(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load data, open output pipe
-    df = DataFrame(load("input_data/matched_baseline.dta"))
-    io = open("tables/Table3.tex", "w")
+    df = DataFrame(load("input/matched_baseline.dta"))
+    io = open("output/tables/Table3.tex", "w")
 
     # Minimize redundant typing
     col_w(x::F64) = "\\multicolumn{1}{p{" * string(x) * "0.1\\linewidth}}"
@@ -76,7 +76,7 @@ end
 function table_4(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load data
-    df = DataFrame(load("input_data/matched_baseline.dta"))
+    df = DataFrame(load("input/matched_baseline.dta"))
     rename!(df, [:logconsumption => :logc, :closesubtreatment => :close])
 
     # Drop non self-targeting households
@@ -98,7 +98,7 @@ function table_4(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((["No", "No", "No"], μ))
-    regtable(r...; renderSettings = latexOutput("tables/Table4.tex"),
+    regtable(r...; renderSettings = latexOutput("output/tables/Table4.tex"),
     		 regressors = ["PMTSCORE", "eps"],
              custom_statistics = mystats, table_kwargs...)
     return r, μ
@@ -110,13 +110,13 @@ end
 function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load baseline data
-    df = DataFrame(load("input_data/matched_baseline.dta"))
+    df = DataFrame(load("input/matched_baseline.dta"))
     rename!(df, [:logconsumption => :logc, :closesubtreatment => :close])
     insertcols!(df, :base_or_end => 0.0,
                     :benefit     => categorical(df.getbenefit))
 
     # Load midline data
-    df_m = clean(DataFrame(load("input_data/matched_midline.dta")), [:flag_newHH], F64)
+    df_m = clean(DataFrame(load("input/matched_midline.dta")), [:flag_newHH], F64)
     df_m = df_m[df_m.flag_newHH .== 1.0, :]
     rename!(df_m, [:logconsumption => :logc, :closesubtreatment => :close])
     df_m = convert_types(df_m, [:logc, :showup] .=> F64)
@@ -195,12 +195,12 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  6), μ_5a))
-    regtable(r_5a...; renderSettings = latexOutput("tables/Table5_NoStratumFEs.tex"),
+    regtable(r_5a...; renderSettings = latexOutput("output/tables/Table5_NoStratumFEs.tex"),
              regressors = ["selftargeting", "logc", "logc & selftargeting"],
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 6), μ_5b))
-     regtable(r_5b...; renderSettings = latexOutput("tables/Table5_StratumFEs.tex"),
+     regtable(r_5b...; renderSettings = latexOutput("output/tables/Table5_StratumFEs.tex"),
      		  regressors = ["selftargeting", "logc", "logc_ST"],
               custom_statistics = mystats, table_kwargs...)
 
@@ -213,7 +213,7 @@ end
 function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load baseline data
-    df = DataFrame(load("input_data/matched_baseline.dta"))
+    df = DataFrame(load("input/matched_baseline.dta"))
     rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close])
     N  = size(df, 1)
 
@@ -314,12 +314,12 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  5), μ_6a))
-    regtable(r_6a...; renderSettings = latexOutput("tables/Table6_NoStratumFEs.tex"),
+    regtable(r_6a...; renderSettings = latexOutput("output/tables/Table6_NoStratumFEs.tex"),
              regressors = ["selftargeting", "logc", "logc_ST"],
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 5), μ_6b))
-     regtable(r_6b...; renderSettings = latexOutput("tables/Table6_StratumFEs.tex"),
+     regtable(r_6b...; renderSettings = latexOutput("output/tables/Table6_StratumFEs.tex"),
      		  regressors = ["selftargeting", "logc", "logc_ST"],
               custom_statistics = mystats, table_kwargs...)
 
@@ -330,7 +330,7 @@ end
 # Table 7 regressions
 ###########################
 function table_7(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
-    df = DataFrame(load("input_data/matched_baseline.dta"))
+    df = DataFrame(load("input/matched_baseline.dta"))
     rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close])
     N  = size(df, 1)
 
@@ -386,7 +386,7 @@ function table_7(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                                group = :kecagroup, clust = :kecagroup)
     # Print output
     mystats = NamedTuple{(:comments, :means)}((["No","No","No","Yes","Yes","Yes"], μ_7))
-    regtable(r_7...; renderSettings = latexOutput("tables/Table7.tex"),
+    regtable(r_7...; renderSettings = latexOutput("output/tables/Table7.tex"),
              regressors = ["close", "logc", "close_logc", "inc2", "inc3", "inc4", "inc5",
                            "closeinc2", "closeinc3", "closeinc4", "closeinc5"],
     		 custom_statistics = mystats, table_kwargs...)
