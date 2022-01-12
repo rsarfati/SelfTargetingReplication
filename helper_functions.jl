@@ -97,9 +97,8 @@ Hence, can equate estimation of m(x) to estimating intercept term a in a
 local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
-                 bw::Union{Symbol,F64} = :norm_ref,
-                 bootstrap_σ::Bool = true, clust::Symbol = Symbol(),
-                 N_bs::Int64 = 1000)
+                 bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
+                 bootstrap_σ::Bool = true, N_bs::Int64 = 1000)
 
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
@@ -110,32 +109,14 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     # Normal kernel:
     K_normal(z::F64) = (2*pi)^(-0.5) * exp(-z^2 / 2)
 
-    # Select bandwidth (if not given as input)
-    h0 = if typeof(bw) <: F64
-        bw
-    else
-        # Normal reference rule / Silverman's rule of thumb (should be 0.9)
-        if bw == :norm_ref
-            0.9 * min(std(X), iqr(X) / 1.349) * N^(-1/5)
-        # 1-Nth of total distance (used by Stata)
-        elseif bw == :tot_dist
-            (maximum(X) - minimum(X)) / N
-        # Choose h0 by cross-validation method (Stone 1977)
-        elseif bw == :cross_val
-            #TODO
-            0.0
-        else
-            @error "Provided bandwidth selection method invalid -- check input!"
-        end
-    end
-
     """
     Local linear regression smoother (Fan 1992).
     Keyword option for computing boostrap confidence intervals.
     """
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
                    K::Function = K_normal, bootstrap_σ::Bool = true,
-                   cluster_on::Vector = Vector(), N_bs::Int64 = 1000)
+                   cluster_on::Vector = Vector(), N_bs::Int64 = 1000,
+                   save_w::Bool = false)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
         # Eq 2.3
@@ -145,7 +126,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
 
         # Construct sup-t confidence bands
         if bootstrap_σ
-            df_σ = DataFrame(:Y => Y, :X => X, :Kx => K.((x0 .- X) ./ h))
+            df_σ = DataFrame(:Y => Y, :X => X, :Kx => K.((x0 .- X) ./ h)) #TODO???
 
             # Case: not clustering SEs
             V = if isempty(cluster_on)
@@ -162,9 +143,42 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
 
             return m_x, lb_i, ub_i
         else
-            return m_x, 0.0, 0.0
+            if save_w
+                m_x, w
+            else
+                return m_x, 0.0, 0.0
+            end
         end
     end
+
+    # Select bandwidth (if not given as input)
+    h0 = if typeof(bw) <: F64
+        bw
+    else
+        # Normal reference rule / Silverman's rule of thumb
+        if bw == :norm_ref
+            0.9 * min(std(X), iqr(X) / 1.349) * N^(-1/5)
+        # 1-Nth of total distance (used by Stata command?)
+        elseif bw == :tot_dist
+            (maximum(X) - minimum(X)) / N
+        # Choose h0 by cross-validation method (Stone 1977)
+        elseif bw == :cross_val
+            function CV(h_test)
+                m_i, w_i = zeros(N), zeros(N)
+                for i=1:N
+                    m_i[i], w_i[i] = m_hat(Y, X, X[i], h_test; bootstrap_σ = false)
+                end
+                return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
+            end
+            h_grid = collect(range(0.01, stop=0.7, length=100))
+            #minimizer(optimize(CV, 0.01, 0.6))
+            h_grid[argmin(CV.(h_grid))]
+        else
+            @error "Provided bandwidth selection method invalid -- check input!"
+        end
+    end
+    @show h0
+
     # Compute m_hat over grid of x's
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
@@ -186,23 +200,21 @@ end
 
 """
 ```
-clean(df::DataFrame, col::Symbol;
-      out_t::T = eltype(findfirst(!ismissing, df[:,col]))) where T<:Type
+clean(df::DataFrame, c::Symbol; out_t::Type = eltype(findfirst(!ismissing, df[:,c])))
 clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict{Symbol,<:Type} = Dict())
 clean(df::DataFrame, cols::Vector{Symbol}, out_t::Type)
 ```
 Functions to convert & filter data so as to be consistently typed & non-missing.
 """
-function clean(df::DataFrame, col::Symbol;
-               out_t::Type = typeof(df[findfirst(!ismissing, df[:,col]), col]))
-    return convert_types(df[.!ismissing.(df[:,col]), :], [col] .=> out_t)
+function clean(df::DataFrame, c::Symbol; out_t::Type = typeof(df[findfirst(!ismissing, df[:,c]), c]))
+    return convert_types(df[.!ismissing.(df[:,c]), :], [c] .=> out_t)
 end
-function clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict = Dict{Symbol,Type}())
-    for col in cols
-        df = haskey(out_t, col) ? clean(df, col; out_t = out_t[col]) : clean(df, col)
+function clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict = Dict())
+    for c in cols
+        df = haskey(out_t, c) ? clean(df, c; out_t = out_t[c]) : clean(df, c)
     end
     return df
 end
 clean(df::DataFrame, t::Dict{Symbol,<:Type}) = clean(df, collect(keys(t)); out_t = t)
-clean(df::DataFrame, cs::Vector{Symbol}, out_t::Type) = clean(df, cs;
-                     out_t = Dict([cs .=> repeat([out_t], length(cs))]...))
+clean(df::DataFrame, cols::Vector{Symbol}, out_t::Type) = clean(df, cols;
+                     out_t = Dict([cols .=> repeat([out_t], length(cols))]...))

@@ -66,7 +66,8 @@ function figure_2(; labels::Dict{String,String} = labels)
                out_t = Dict([:logc, :showup] .=> F64))
 
     x0_grid = collect(range(11.25; stop = 15, length = 200))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid; clust = :hhea)
+    y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid;
+                            clust = :hhea, bw = :cross_val)
 
     p = plot(x0_grid, y_hat, legend = false, xrange = (11,15.25), yrange = (0,0.8),
              xl = labels["logc"], yl = "Show-up Probability", lw = 2.0, lc = :cyan3)
