@@ -63,13 +63,11 @@ Bootstrap confidence intervals!
 """
 function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
     N = size(V, 1)
-    d = MvNormal(zeros(N), V)
-    @assert 0 < ind <= N "Provided `ind` doesn't correspond to a valid explanatory variable; check input."
-    return quantile(rand(d, draws)[ind,:], [1-conf, conf])
+    @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid explanatory variable; check input."
+    return quantile(rand(MvNormal(zeros(N), V), draws)[ind,:], [1-conf, conf])
 end
 function bs_σ(V::T; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
-    d = Normal(0, V)
-    return quantile(abs.(rand(d, draws)), conf)
+    return quantile(abs.(rand(Normal(0, V), draws)), conf)
 end
 
 """
@@ -100,7 +98,7 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref,
-                 bootstrap_SEs::Bool = true, clust::Symbol = Symbol(),
+                 bootstrap_σ::Bool = true, clust::Symbol = Symbol(),
                  N_bs::Int64 = 1000)
 
     X   = df[:, Symbol(f.rhs)]
@@ -118,7 +116,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     else
         # Normal reference rule / Silverman's rule of thumb (should be 0.9)
         if bw == :norm_ref
-            1.9 * min(std(X), iqr(X) / 1.349) * N^(-1/5)
+            0.9 * min(std(X), iqr(X) / 1.349) * N^(-1/5)
         # 1-Nth of total distance (used by Stata)
         elseif bw == :tot_dist
             (maximum(X) - minimum(X)) / N
@@ -127,7 +125,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             #TODO
             0.0
         else
-            @error "Bandwidth selection method invalid -- check input!"
+            @error "Provided bandwidth selection method invalid -- check input!"
         end
     end
 
@@ -136,8 +134,8 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     Keyword option for computing boostrap confidence intervals.
     """
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
-                   K::Function = K_normal, bootstrap_SEs::Bool = true,
-                   cluster_on::Vector = Vector(), N_bs::Int64 = 500)
+                   K::Function = K_normal, bootstrap_σ::Bool = true,
+                   cluster_on::Vector = Vector(), N_bs::Int64 = 1000)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
         # Eq 2.3
@@ -146,16 +144,16 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
         m_x = sum(w .* Y) / (sum(w) + N^(-2))
 
         # Construct sup-t confidence bands
-        if bootstrap_SEs
-            df_SEs = DataFrame(:Y => Y, :X => X, :Kx => 1 ./ K.((x0 .- X) ./ h))
+        if bootstrap_σ
+            df_σ = DataFrame(:Y => Y, :X => X, :Kx => K.((x0 .- X) ./ h))
 
             # Case: not clustering SEs
             V = if isempty(cluster_on)
-                vcov(reg(df_SEs, @formula(Y ~ X), weights=:Kx))
+                vcov(reg(df_σ, @formula(Y ~ X), weights = :Kx))
             # Case: clustering SEs
             else
-                df_SEs = insertcols!(df_SEs, clust => cluster_on)
-                vcov(reg(df_SEs, @formula(Y ~ X), cluster(clust), weights=:Kx))
+                df_σ = insertcols!(df_σ, clust => cluster_on)
+                vcov(reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx))
             end
             bl, bu = bs_σ(V; draws = N_bs, ind=2)
             #b = sup_t(V; draws = N_bs)
@@ -170,9 +168,8 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     # Compute m_hat over grid of x's
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
-        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0;
-                                       bootstrap_SEs = bootstrap_SEs,
-                                       cluster_on = cluster_on, N_bs = N_bs)
+        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; cluster_on = cluster_on,
+                                       bootstrap_σ = bootstrap_σ, N_bs = N_bs)
     end
     return y_hat, lb, ub
 end
@@ -190,25 +187,22 @@ end
 """
 ```
 clean(df::DataFrame, col::Symbol;
-      out_type::T = eltype(findfirst(!ismissing, df[:,col]))) where T<:Type
-clean(df::DataFrame, cols::Vector{Symbol}; out_type::Dict{Symbol,<:Type} = Dict())
-clean(df::DataFrame, cols::Vector{Symbol}, out_type::Type)
+      out_t::T = eltype(findfirst(!ismissing, df[:,col]))) where T<:Type
+clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict{Symbol,<:Type} = Dict())
+clean(df::DataFrame, cols::Vector{Symbol}, out_t::Type)
 ```
 Functions to convert & filter data so as to be consistently typed & non-missing.
 """
 function clean(df::DataFrame, col::Symbol;
-               out_type::Type = typeof(df[findfirst(!ismissing, df[:,col]), col]))
-    return convert_types(df[.!ismissing.(df[:,col]), :], [col] .=> out_type)
+               out_t::Type = typeof(df[findfirst(!ismissing, df[:,col]), col]))
+    return convert_types(df[.!ismissing.(df[:,col]), :], [col] .=> out_t)
 end
-function clean(df::DataFrame, cols::Vector{Symbol};
-               out_type::Dict{Symbol,<:Type} = Dict{Symbol,Type}())
+function clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict = Dict{Symbol,Type}())
     for col in cols
-        df = haskey(out_type, col) ? clean(df, col; out_type = out_type[col]) :
-                                     clean(df, col)
+        df = haskey(out_t, col) ? clean(df, col; out_t = out_t[col]) : clean(df, col)
     end
     return df
 end
-clean(df::DataFrame, t::Dict{Symbol,<:Type}) = clean(df, collect(keys(t));
-                                                     out_type = t)
-clean(df::DataFrame, cs::Vector{Symbol}, out_type::Type) = clean(df, cs;
-                     out_type = Dict([cs .=> repeat([out_type], length(cs))]...))
+clean(df::DataFrame, t::Dict{Symbol,<:Type}) = clean(df, collect(keys(t)); out_t = t)
+clean(df::DataFrame, cs::Vector{Symbol}, out_t::Type) = clean(df, cs;
+                     out_t = Dict([cs .=> repeat([out_t], length(cs))]...))

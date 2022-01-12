@@ -20,7 +20,7 @@ function figure_1(; labels::Dict{String,String} = labels, bins::Int64 = 0)
 
     # Clean data
     df = clean(df[df.showup .== 1, :], [:getbenefit, :logc, :kaburban, :PMTSCORE],
-               out_type = Dict([:getbenefit, :logc, :PMTSCORE] .=> F64))
+               out_t = Dict([:getbenefit, :logc, :PMTSCORE] .=> F64))
 
     Φ(x::Float64) = cdf(Normal(), x)
 
@@ -63,7 +63,7 @@ function figure_2(; labels::Dict{String,String} = labels)
     df = rename!(DataFrame(load("input/matched_baseline.dta")),
                  [:logconsumption  => :logc])
     df = clean(df[df.selftargeting .== 1, :], [:logc, :showup, :hhea],
-               out_type = Dict([:logc, :showup] .=> F64))
+               out_t = Dict([:logc, :showup] .=> F64))
 
     x0_grid = collect(range(11.25; stop = 15, length = 200))
     y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid; clust = :hhea)
@@ -84,7 +84,7 @@ function figure_3(; labels::Dict{String,String} = labels)
     df = rename!(DataFrame(load("input/matched_baseline.dta")),
                  [:logconsumption  => :logc])
     df = clean(df[df.selftargeting .== 1, :], [:logc, :PMTSCORE, :showup, :hhea],
-               out_type = Dict([:showup, :logc, :PMTSCORE] .=> F64))
+               out_t = Dict([:showup, :logc, :PMTSCORE] .=> F64))
 
     # Observable component of log consumption
     x0_grid = collect(range(11.25; stop = 14.5, length = 100))
