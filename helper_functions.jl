@@ -18,6 +18,7 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
         @assert group != Symbol() "Require `group` kwarg for probit. Check inputs."
     end
 
+    glm_kwargs = Dict()
     # Option to include weights for observations
     if !isempty(wts); glm_kwargs[:wts] = wts end
     # Specify strata for FEs in GLM.jl lingo

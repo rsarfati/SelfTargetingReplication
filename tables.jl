@@ -101,7 +101,6 @@ function table_4(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     regtable(r...; renderSettings = latexOutput("tables/Table4.tex"),
     		 regressors = ["PMTSCORE", "eps"],
              custom_statistics = mystats, table_kwargs...)
-
     return r, μ
 end
 
