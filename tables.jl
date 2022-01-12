@@ -231,8 +231,6 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     df[(df.verypoor_povertyline1 .== 0) .& (df.benefit_hyp .== 0), :incl_err_hyp] .= 0.0
     df[(df.verypoor_povertyline1 .== 0) .& (df.benefit_hyp .== 1), :incl_err_hyp] .= 1.0
 
-
-
     # This does not match Stata; Stata is wrong. The issue most likely concerns how Stata
     # treats references (pass-by-value/pass-by-reference), which is causing a pathology when
     # you conditionally mutate the same column you're contemporaneously referencing.

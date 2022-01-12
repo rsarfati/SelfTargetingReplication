@@ -116,7 +116,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
                    K::Function = K_normal, bootstrap_σ::Bool = true,
                    cluster_on::Vector = Vector(), N_bs::Int64 = 1000,
-                   save_w::Bool = false)
+                   save_w_ind::Int64 = 0)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
         # Eq 2.3
@@ -124,9 +124,14 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
         # Eq 2.2
         m_x = sum(w .* Y) / (sum(w) + N^(-2))
 
+        # Alberto's lecture notes
+        Kx1 = K.((x0 .- X) ./ h)
+        i_sum = inv(sum([ Kx1[j] * (1 + X[j]^2) for j=1:N]))
+        Kx  = [i_sum * Kx1[i] .* (1 + x0 * X[i]) for i=1:N]
+
         # Construct sup-t confidence bands
         if bootstrap_σ
-            df_σ = DataFrame(:Y => Y, :X => X, :Kx => K.((x0 .- X) ./ h)) #TODO???
+            df_σ = DataFrame(:Y => Y, :X => X, :Kx => Kx) #TODO???
 
             # Case: not clustering SEs
             V = if isempty(cluster_on)
@@ -136,15 +141,13 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                 df_σ = insertcols!(df_σ, clust => cluster_on)
                 vcov(reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx))
             end
-            bl, bu = bs_σ(V; draws = N_bs, ind=2)
-            #b = sup_t(V; draws = N_bs)
+            bl, bu = bs_σ(V; draws = N_bs, ind = 2)
             lb_i = m_x + bl
             ub_i = m_x + bu
-
             return m_x, lb_i, ub_i
         else
-            if save_w
-                m_x, w
+            if save_w_ind > 0
+                m_x, Kx[save_w_ind]
             else
                 return m_x, 0.0, 0.0
             end
@@ -166,18 +169,16 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             function CV(h_test)
                 m_i, w_i = zeros(N), zeros(N)
                 for i=1:N
-                    m_i[i], w_i[i] = m_hat(Y, X, X[i], h_test; bootstrap_σ = false)
+                    m_i[i], w_i[i] = m_hat(Y, X, X[i], h_test; bootstrap_σ = false, save_w_ind = i)
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end
-            h_grid = collect(range(0.01, stop=0.7, length=100))
-            #minimizer(optimize(CV, 0.01, 0.6))
+            h_grid = collect(range(0.35, stop = 2.0, length = 20))
             h_grid[argmin(CV.(h_grid))]
         else
             @error "Provided bandwidth selection method invalid -- check input!"
         end
     end
-    @show h0
 
     # Compute m_hat over grid of x's
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)

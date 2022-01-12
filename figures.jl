@@ -67,11 +67,11 @@ function figure_2(; labels::Dict{String,String} = labels)
 
     x0_grid = collect(range(11.25; stop = 15, length = 200))
     y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid;
-                            clust = :hhea, bw = :cross_val)
+                            clust = :hhea, bw = 0.35)
 
     p = plot(x0_grid, y_hat, legend = false, xrange = (11,15.25), yrange = (0,0.8),
              xl = labels["logc"], yl = "Show-up Probability", lw = 2.0, lc = :cyan3)
-    plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
+    plot!(p, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
 
     savefig(p, "output/plots/fig2.png")
     return p
@@ -88,15 +88,14 @@ function figure_3(; labels::Dict{String,String} = labels)
                out_t = Dict([:showup, :logc, :PMTSCORE] .=> F64))
 
     # Observable component of log consumption
-    x0_grid = collect(range(11.25; stop = 14.5, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid; clust = :hhea)
+    x0_grid = collect(range(11.25; stop = 14.25, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid; clust = :hhea, bw=0.25)
 
     pA = plot(x0_grid, y_hat, legend = false, xrange = (11, 15), yrange = (0., 0.8),
               xl = "Observable Component of Log Consumption (PMT Score)",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pA, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
     Plots.savefig(pA, "output/plots/fig3A.png")
-    @show pA
 
     r = reg(df, @formula(logc ~ PMTSCORE), cluster(:hhea), save = :residuals)
     insertcols!(df, :eps => Vector{Float64}(r.residuals))
@@ -105,7 +104,7 @@ function figure_3(; labels::Dict{String,String} = labels)
     x0_grid = collect(range(-1.5; stop = 2, length = 100))
     y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea)
 
-    pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0.,0.8),
+    pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
               xl = "Unobservable Component of Log Consumption",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pB, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
