@@ -17,8 +17,9 @@ import Vcov.cluster
 run(`cd /Users/henrygenighx/Desktop/14.771\ -\ Dev/replication`)
 
 # Build output folders if don't already exist
-!isdir("plots")  && run(`mkdir plots/`)
-!isdir("tables") && run(`mkdir tables/`)
+!isdir("output")        && run(`mkdir output/`)
+!isdir("output/plots")  && run(`mkdir output/plots/`)
+!isdir("output/tables") && run(`mkdir output/tables/`)
 
 # ***************************
 # Replicate Tables & Figures
