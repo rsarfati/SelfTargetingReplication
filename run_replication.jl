@@ -51,7 +51,7 @@ table_kwargs = Dict(:labels => labels,
                     :regression_statistics => [:nobs])
 
 # Load helper functions
-include("helper_functions.jl")
+include("core_functions.jl")
 
 # Run GMM estimation
 #include("gmm.jl")
@@ -69,12 +69,14 @@ include("figures.jl")
 
 ###### Tables #######
 
-table_1()
-table_3()
-table_4()
-table_5()
-table_6()
-table_7()
+table_1() # Match
+
+table_3() # MATCH
+table_4() # MATCH
+table_5() #  weird
+table_6() #  weird
+table_7() #  weird
+
 # table_8()
 # table_9()
 # table_10()
@@ -83,7 +85,8 @@ table_7()
 
 figure_1()
 figure_2()
-# figure_3()
+#figure_3() #PosDefException: matrix is not positive definite; Cholesky factorization failed.
+
 # figure_4()
 # figure_5()
 # figure_6()
