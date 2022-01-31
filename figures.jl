@@ -102,6 +102,7 @@ function figure_3(; labels::Dict{String,String} = labels)
 
     # Unobservable component of log consumption
     x0_grid = collect(range(-1.5; stop = 2, length = 100))
+    # TODO: Fan regression pos def exception
     y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea)
 
     pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
@@ -114,5 +115,106 @@ function figure_3(; labels::Dict{String,String} = labels)
 end
 
 ###########################
+# Figure 4 (p. 399)
+###########################
+function figure_4(; labels::Dict{String,String} = labels)
+    # Load, clean, separate data
+    df = clean(rename!(DataFrame(load("input/matched_baseline.dta")),
+                 [:logconsumption  => :logc]), Dict(:logc => F64))
+    df1    = df.logc[(df.getbenefit.==1) .& (df.maintreatment.==1)]
+    df2    = df.logc[(df.getbenefit.==1) .& (df.maintreatment.==2)]
+    n1, n2 = length(df1), length(df2)
+
+    # Panel A: Experimental Cumulative Distribution
+    pA = plot(sort(df1), (1:n1)./n1, xrange = (11, 15), lw = 2, lc = :cyan3,
+              title = "Experimental Cumuluative Distribution",
+              xlabel = "Log Consumption", ylabel = "CDF",
+              legend=:bottomright, label = "Automatic Screening")
+    plot!(pA, sort(df2), (1:n2)./n2, lw = 2, lc = :cyan4, label="Self-Targeting")
+    Plots.savefig(pA, "output/plots/fig4A.png")
+
+    # Panel B: Probability receive benefits under either treatment, as fn of logc
+    df = clean(df, [:getbenefit, :maintreatment, :hhea],
+               out_t = Dict([:getbenefit, :maintreatment] .=> F64))
+
+    # Unobservable component of log consumption
+    x0_grid = collect(range(11.5; stop = 15.5, length = 100))
+
+    # TODO: fan reg - pos def exception
+    y1, u1, l1 = fan_reg(@formula(getbenefit ~ logc),
+                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea)
+    y2, u2, l2 = fan_reg(@formula(getbenefit ~ logc),
+                      df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
+
+    pB = plot(x0_grid, y1, legend = :bottomright, xrange = (-2, 2), yrange = (0., 0.8),
+              xl = "Log Consumption", label="Automatic Screening",
+              yl = "Probability to Receive Benefits", lw = 2, lc = :peach3)
+    plot!(pB, x0_grid, [l1, u1], ls=:dash, lw = 1.5, lc = :peach4, label="")
+
+    plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="")
+    plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
+
+    Plots.savefig(pB, "output/plots/fig4B.png")
+
+    return pA, pB
+end
+
+
+###########################
+# Figure 5 (p. 408)
+###########################
+function figure_5(; labels::Dict{String,String} = labels)
+    # Load, clean, separate data
+    df = clean(rename!(DataFrame(load("input/matched_baseline.dta")),
+                 [:logconsumption  => :logc]), Dict(:logc => F64))
+    insertcols!(df, :getbenefit_hyp => Vector{Float64}(
+                (df.pcexppred_noise .< df.povertyline3_noise) .&
+                .!((df.showup .== 0) .& (df.selftargeting .== 1))))
+
+    df1    = df.logc[(df.getbenefit_hyp.==1) .& (df.maintreatment.==1)]
+    df2    = df.logc[(df.getbenefit_hyp.==1) .& (df.maintreatment.==2)]
+    n1, n2 = length(df1), length(df2)
+
+    # Panel A: Experimental Cumulative Distribution
+    pA = plot(sort(df1), (1:n1)./n1, xrange = (11, 15), lw = 2, lc = :cyan3,
+              legend=:bottomright, xlabel = "Log Consumption", ylabel = "CDF",
+              label = "Hypothetical Universal Automatic Targeting")
+    plot!(pA, sort(df2), (1:n2)./n2, lw = 2, lc = :cyan4, label="Self-Targeting")
+    Plots.savefig(pA, "output/plots/fig5A.png")
+
+    # Panel B: Probability receive benefits under either treatment, as fn of logc
+    df = clean(df, [:maintreatment, :hhea],
+               out_t = Dict([:maintreatment] .=> F64))
+
+    # Unobservable component of log consumption
+    x0_grid = collect(range(11.5; stop = 15.5, length = 100))
+
+    # TODO: fan reg - pos def exception
+    y1, u1, l1 = fan_reg(@formula(getbenefit_hyp ~ logc),
+                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea)
+    y2, u2, l2 = fan_reg(@formula(getbenefit_hyp ~ logc),
+                      df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
+
+    pB = plot(x0_grid, y1, legend = :bottomright, xrange = (-2, 2), yrange = (0., 0.8),
+              xl = "Log Consumption", label="Hypothetical Universal Automatic Targeting",
+              yl = "Probability to Receive Benefits", lw = 2, lc = :peach3)
+    plot!(pB, x0_grid, [l1, u1], ls=:dash, lw = 1.5, lc = :peach4, label="")
+
+    plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="")
+    plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
+
+    Plots.savefig(pB, "output/plots/fig5B.png")
+    return pA, pB
+end
+
+###########################
 # Figure 6 (p. 413)
 ###########################
+function figure_6(; labels::Dict{String,String} = labels)
+    # Load, clean, separate data
+    df = clean(rename!(DataFrame(load("input/costs.dta")),
+                 [:logconsumption  => :logc]), Dict(:logc => F64))
+
+     Plots.savefig(pB, "output/plots/fig4B.png")
+     return pA, pB
+ end
