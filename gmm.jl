@@ -1,5 +1,4 @@
 function compute_quantiles(df::DataFrame)
-    N_q = Dict(:consumption => 5, :pmtscore => 3, :unobs_cons => 3, :distt => 4)
 
     # Helper functions
     quant(N::Int64) = [n/N for n=1:N-1]
@@ -11,25 +10,16 @@ function compute_quantiles(df::DataFrame)
     insertcols!(df, :unobs_cons => residuals(reg(df, @formula(log_c ~ pmtscore)), df))
 
     # Quantilies of observed consumption, PMT, unobs. consumption (w), distance
-    for v in [:consumption, :pmtscore, :unobs_cons, :distt]
-        col_q_idx = Symbol(string(v) * "_q_idx"))
-        insertcols!(df, col_q_idx => assign_q(df[:,v], quantile(df[:,v] quant(N_q[v])))
+    q_vars = [:consumption, :pmtscore, :unobs_cons, :distt]
+    N_q    = Dict(q_vars .=> [5, 3, 3, 4])
+
+    # Assign categorical IDs for quantiles
+    for v in q_vars
+        v_name = Symbol(string(v) * "_q_idx"))
+        insertcols!(df, v_name => assign_q(df[:,v], quantile(df[:,v] quant(N_q[v])))
     end
-    
-    my_q = Dict()
-    my_q[:consumption] = quantile(df.consumption, quant(N_q[:c]))
-    my_q[:pmtscore]    = quantile(df.pmtscore,    quant(N_q[:pmt]))
-    my_q[:unobs_cons]  = quantile(df.unobs_cons,  quant(N_q[:unobs_cons]))
-    my_q[:distt]       = quantile(df.distt,       quant(N_q[:distt]))
-
-    # Categoricals for quantiles
-    insertcols!(df, :obs_cons_terc    => assign_q(df.consumption,
-                                                    quantile(df.consumption, quant(3))))
-    insertcols!(df, :obs_cons_q_idx   => assign_q(df.consumption, my_q[:consumption]))
-    insertcols!(df, :pmt_q_idx        => assign_q(df.pmtscore,    my_q[:pmtscore]))
-    insertcols!(df, :unobs_cons_q_idx => assign_q(df.unobs_cons,  my_q[:unobs_cons]))
-    insertcols!(df, :distt_q_idx      => assign_q(df.distt,       my_q[:distt]))
-
+    # Extra thing?
+    #insertcols!(df, :obs_cons_terc => assign_q(df.consumption, quantile(df.consumption, quant(3))))
     return df
 end
 
