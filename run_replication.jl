@@ -6,15 +6,19 @@
 # Base packages
 using CSV, DataFrames, Distributions, FileIO, ForwardDiff, LinearAlgebra
 using Optim, Printf, Plots, Statistics, StatFiles, StatsBase
+
 # Indulgent packages
 using FixedEffectModels, GLM, RegressionTables, Vcov
 using Binscatters, CategoricalArrays, CovarianceMatrices
+
+# Imports for shorthand
 import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
 #import StatsBase.vcov, CovarianceMatrices.CRHC0
 
 # Switch to desired working directory (user-specified file path)
-run(`cd /Users/henrygenighx/Desktop/14.771\ -\ Dev/replication`)
+PATH = "~" # SPECIFY
+run(`cd $PATH`)
 
 # Build output folders if don't already exist
 !isdir("output")        && run(`mkdir output/`)
@@ -28,7 +32,7 @@ run(`cd /Users/henrygenighx/Desktop/14.771\ -\ Dev/replication`)
 # Define global constant(s)
 F64 = Float64
 
-# Prep for output formatting
+# Prep labels for table and figure formatting
 labels = Dict("logconsumption" => "Log Consumption",
               "showup" => "Showed Up",
               "PMTSCORE" => "Observable Consumption",
@@ -69,14 +73,14 @@ include("figures.jl")
 
 ###### Tables #######
 
-table_1() # Match
-
+table_1() # MATCH
 table_3() # MATCH
 table_4() # MATCH
 table_5() #  weird
 table_6() #  weird
 table_7() #  weird
 
+# GMM
 # table_8()
 # table_9()
 # table_10()
@@ -86,7 +90,6 @@ table_7() #  weird
 figure_1()
 figure_2()
 #figure_3() #PosDefException: matrix is not positive definite; Cholesky factorization failed.
-
-# figure_4()
-# figure_5()
-# figure_6()
+#figure_4()
+#figure_5()
+#figure_6()
