@@ -42,13 +42,13 @@ function figure_1(; labels::Dict{String,String} = labels, bins::Int64 = 0)
 
     # Build and save plots, with axes normalized to those in paper
     p1 = binscatter(df, @formula(lambda ~ logc), bins, legend = false,
-                    xlabel = labels["logc"], xrange = (11,16), yrange = (0.,0.4),
-                    ylabel = "(Pred.) Probability to Receive Benefits")
+                    xl = labels["logc"], xrange = (11,16), yrange = (0.,0.4),
+                    yl = "(Pred.) Probability to Receive Benefits")
     Plots.savefig(p1, "output/plots/fig1A.png")
 
     p2 = binscatter(df, @formula(mu_pmt ~ PMTSCORE), bins, legend = false,
-                    xlabel = "Pred. Log Consumption (PMT score)",
-                    ylabel = "(Pred.) Probability to Receive Benefits",
+                    xl = "Pred. Log Consumption (PMT score)",
+                    yl = "(Pred.) Probability to Receive Benefits",
                     xrange = (11,15), yrange = (0,1))
     Plots.savefig(p2, "output/plots/fig1B.png")
 
@@ -128,7 +128,7 @@ function figure_4(; labels::Dict{String,String} = labels)
     # Panel A: Experimental Cumulative Distribution
     pA = plot(sort(df1), (1:n1)./n1, xrange = (11, 15), lw = 2, lc = :cyan3,
               title = "Experimental Cumuluative Distribution",
-              xlabel = "Log Consumption", ylabel = "CDF",
+              xl = "Log Consumption", yl = "CDF",
               legend=:bottomright, label = "Automatic Screening")
     plot!(pA, sort(df2), (1:n2)./n2, lw = 2, lc = :cyan4, label="Self-Targeting")
     Plots.savefig(pA, "output/plots/fig4A.png")
@@ -177,7 +177,7 @@ function figure_5(; labels::Dict{String,String} = labels)
 
     # Panel A: Experimental Cumulative Distribution
     pA = plot(sort(df1), (1:n1)./n1, xrange = (11, 15), lw = 2, lc = :cyan3,
-              legend=:bottomright, xlabel = "Log Consumption", ylabel = "CDF",
+              legend=:bottomright, xl = "Log Consumption", yl = "CDF",
               label = "Hypothetical Universal Automatic Targeting")
     plot!(pA, sort(df2), (1:n2)./n2, lw = 2, lc = :cyan4, label="Self-Targeting")
     Plots.savefig(pA, "output/plots/fig5A.png")
@@ -193,7 +193,7 @@ function figure_5(; labels::Dict{String,String} = labels)
     y1, u1, l1 = fan_reg(@formula(getbenefit_hyp ~ logc),
                          df[df.maintreatment.==1,:], x0_grid; clust = :hhea)
     y2, u2, l2 = fan_reg(@formula(getbenefit_hyp ~ logc),
-                      df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
+                         df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
 
     pB = plot(x0_grid, y1, legend = :bottomright, xrange = (-2, 2), yrange = (0., 0.8),
               xl = "Log Consumption", label="Hypothetical Universal Automatic Targeting",
@@ -211,10 +211,23 @@ end
 # Figure 6 (p. 413)
 ###########################
 function figure_6(; labels::Dict{String,String} = labels)
-    # Load, clean, separate data
+    # Load + clean data
     df = clean(rename!(DataFrame(load("input/costs.dta")),
-                 [:logconsumption  => :logc]), Dict(:logc => F64))
+               [:consumption  => :c]), Dict([:c, :totcost_pc] .=> F64))
+    # Confirm concavity of graph
+    insertcols!(df, :c2 => df.c .^ 2)
+    r = reg(df,                  @formula(totcost_pc ~ c + c2))
+    r = reg(df[df.c .< 2000000,:], @formula(totcost_pc ~ c + c2))
 
-     Plots.savefig(pB, "output/plots/fig4B.png")
-     return pA, pB
+    # TODO: Fan regression pos def exception
+    x0_grid = collect(range(0; stop = 60000, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid)
+
+    # Plot Fan regression
+    p = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
+             xl = "Per Capita Consumption", yl = "Total Costs per Capita",
+             lw = 2, lc = :cyan3)
+    plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
+    Plots.savefig(p, "output/plots/fig6.png")
+    return p
  end
