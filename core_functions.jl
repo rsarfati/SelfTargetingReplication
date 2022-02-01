@@ -98,7 +98,7 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 compute_σ::Symbol = :analytic, N_bs::Int64 = 1000)
+                 compute_σ::Symbol = :analytic, N_bs::Int64 = 1000, coef_ind = 2)
 
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
@@ -116,7 +116,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
                    K::Function = K_normal, compute_σ::Symbol = :analytic,
                    cluster_on::Vector = Vector(), N_bs::Int64 = 1000,
-                   save_w_ind::Int64 = 0)
+                   save_w_ind::Int64 = 0, coef_ind::Int64 = 2)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
         # Eq 2.3
@@ -146,8 +146,12 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                 V = vcov(r_σ)
                 bs_σ(V; draws = N_bs, ind = 2)
             elseif compute_σ == :analytic
-                b = stderror(r_σ)[2]
-                -b, b
+                b = stderror(r_σ)[coef_ind]
+                if b !== 0
+                    -b, b
+                else
+                    NaN, NaN
+                end
             else
                 @error "Implemented options for CIs limited to :bootstrap and :analytic."
             end
@@ -178,7 +182,8 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             function CV(h_test)
                 m_i, w_i = zeros(N), zeros(N)
                 for i=1:N
-                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; compute_σ = :none, save_w_ind = i)
+                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; compute_σ = :none,
+                                           save_w_ind = i, coef_ind = coef_ind)
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end
@@ -193,7 +198,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
         y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; cluster_on = cluster_on,
-                                       compute_σ = compute_σ, N_bs = N_bs)
+                                       compute_σ = compute_σ, N_bs = N_bs, coef_ind = coef_ind)
     end
     return y_hat, lb, ub
 end

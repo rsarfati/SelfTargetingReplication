@@ -85,7 +85,6 @@ table_7() #  weird
 # table_10()
 
 ###### Figures #######
-
 figure_1()
 figure_2()
 figure_3()

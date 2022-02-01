@@ -220,11 +220,12 @@ function figure_6(; labels::Dict{String,String} = labels)
     r = reg(df,                    @formula(totcost_pc ~ c + c2))
     r = reg(df[df.c .< 2e6,:], @formula(totcost_pc ~ c + c2))
 
-    x0_grid = collect(range(0; stop = 4e6, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea)
+    x0_grid = collect(range(0; stop = 4.1e6, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea,
+                            coef_ind = 1, bw = 4e5)
 
     # Plot Fan regression
-    p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4e6), yrange = (0, 6e4),
+    p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4.2e6), yrange = (0, 6e4),
              xl = "Per Capita Consumption", yl = "Total Costs per Capita",
              lw = 2, lc = :cyan3)
     plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
