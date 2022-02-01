@@ -141,14 +141,12 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                 df_σ = insertcols!(df_σ, clust => cluster_on)
                 reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx)
             end
-
+            # Choose your poison constructing confidence 95% confidence bands
             bl, bu = if compute_σ == :bootstrap
-
                 V = vcov(r_σ)
                 bs_σ(V; draws = N_bs, ind = 2)
-
             elseif compute_σ == :analytic
-                b = 1.96 * stderror(r_σ)[2] / 2
+                b = (1.96 * stderror(r_σ)[2]) / 2
                 -b, b
             else
                 @error "Implemented options for CIs limited to :bootstrap and :analytic."
@@ -171,7 +169,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     else
         # Normal reference rule / Silverman's rule of thumb
         if bw == :norm_ref
-            0.9 * min(std(X), iqr(X) / 1.349) * N^(-1/5)
+            min(std(X), iqr(X) / 1.349) * N^(-1/5)
         # 1-Nth of total distance (used by Stata command?)
         elseif bw == :tot_dist
             (maximum(X) - minimum(X)) / N
@@ -180,11 +178,11 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             function CV(h_test)
                 m_i, w_i = zeros(N), zeros(N)
                 for i=1:N
-                    m_i[i], w_i[i] = m_hat(Y, X, X[i], h_test; compute_σ = :none, save_w_ind = i)
+                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; compute_σ = :none, save_w_ind = i)
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end
-            h_grid = collect(range(0.35, stop = 2.0, length = 20))
+            h_grid = collect(range(0.25, stop = 2.0, length = 30))
             h_grid[argmin(CV.(h_grid))]
         else
             @error "Provided bandwidth selection method invalid -- check input!"

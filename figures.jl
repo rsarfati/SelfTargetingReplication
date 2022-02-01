@@ -67,7 +67,7 @@ function figure_2(; labels::Dict{String,String} = labels)
 
     x0_grid = collect(range(11.25; stop = 15, length = 200))
     y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid;
-                            clust = :hhea, bw = 0.35)
+                            clust = :hhea, bw = :cross_val)
 
     p = plot(x0_grid, y_hat, legend = false, xrange = (11,15.25), yrange = (0,0.8),
              xl = labels["logc"], yl = "Show-up Probability", lw = 2.0, lc = :cyan3)
@@ -88,10 +88,10 @@ function figure_3(; labels::Dict{String,String} = labels)
                out_t = Dict([:showup, :logc, :PMTSCORE] .=> F64))
 
     # Observable component of log consumption
-    x0_grid = collect(range(11.25; stop = 14.25, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid; clust = :hhea, bw=0.25)
+    x0_grid = collect(range(11.5; stop = 14.5, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid; clust = :hhea, bw=:cross_val)
 
-    pA = plot(x0_grid, y_hat, legend = false, xrange = (11, 15), yrange = (0., 0.8),
+    pA = plot(x0_grid, y_hat, legend = false, xrange = (11.4, 15), yrange = (0., 0.8),
               xl = "Observable Component of Log Consumption (PMT Score)",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pA, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
@@ -102,8 +102,8 @@ function figure_3(; labels::Dict{String,String} = labels)
     insertcols!(df, :eps => Vector{Float64}(r.residuals))
 
     # Unobservable component of log consumption
-    x0_grid = collect(range(-1.5; stop = 2, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea)
+    x0_grid = collect(range(-1.75; stop = 1.75, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea, bw=:cross_val)
 
     pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
               xl = "Unobservable Component of Log Consumption",
