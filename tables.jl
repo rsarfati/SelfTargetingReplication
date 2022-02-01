@@ -175,9 +175,6 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                                 unique(d.kecagroup))
     df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
 
-    @show size(df_drop(:getbenefit, clean(df, [:getbenefit, :logc, :selftargeting,
-                                    :logc_ST, :kecagroup], F64)))
-
     # Run conditional logit regressions, clustering at stratum level
     μ_5b[3], r_5b[3] = glm_clust(@formula(getbenefit ~ selftargeting + logc + logc_ST + kecagroup),
                                  df_drop(:getbenefit, clean(df, [:getbenefit, :logc, :selftargeting,
@@ -234,23 +231,6 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     df[(df.verypoor_povertyline1 .== 0) .& (df.benefit_hyp .== 0), :incl_err_hyp] .= 0.0
     df[(df.verypoor_povertyline1 .== 0) .& (df.benefit_hyp .== 1), :incl_err_hyp] .= 1.0
 
-    # This does not match Stata; Stata is wrong. The issue most likely concerns how Stata
-    # treats references (pass-by-value/pass-by-reference), which is causing a pathology when
-    # you conditionally mutate the same column you're contemporaneously referencing.
-
-    # As evidence supporting this diagnosis, note the code currently reads:
-    #> gen     mistarget_hypothetical = excl_error_hypothetical
-    #> replace mistarget_hypothetical = incl_error_hypothetical if mistarget_hypothetical==.
-
-    # If you edit the Stata code to instead say:
-    #> gen     mistarget_hypothetical = excl_error_hypothetical
-    #> replace mistarget_hypothetical = incl_error_hypothetical if excl_error_hypothetical==.
-
-    # (That is, we now DO NOT conditionally mutate the column we are simultaneously referencing,
-    # but instead reference a column which ought be identical to it (per the line above).)
-    # ... The Stata code matches what I have in Julia. Julia's output also makes "sense," in that:
-    # #{mistarget==0} = #{incl_err == 0} + #{excl_err = 0}, and
-    # #{mistarget==1} = #{incl_err == 1} + #{excl_err = 1}
     insertcols!(df, :mistarget_hyp => [ismissing(df.incl_err_hyp[i]) ? df.excl_err_hyp[i] :
                                        df.incl_err_hyp[i] for i=1:N])
 

@@ -61,7 +61,8 @@ Bootstrap confidence intervals!
 """
 function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
     N = size(V, 1)
-    @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid explanatory variable; check input."
+    @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid explanatory variable;" *
+                         " check input."
     return quantile(rand(MvNormal(zeros(N), V), draws)[ind,:], [1-conf, conf])
 end
 function bs_σ(V::T; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
@@ -219,7 +220,8 @@ clean(df::DataFrame, cols::Vector{Symbol}, out_t::Type)
 ```
 Functions to convert & filter data so as to be consistently typed & non-missing.
 """
-function clean(df::DataFrame, c::Symbol; out_t::Type = typeof(df[findfirst(!ismissing, df[:,c]), c]))
+function clean(df::DataFrame, c::Symbol;
+               out_t::Type = typeof(df[findfirst(!ismissing, df[:,c]), c]))
     return convert_types(df[.!ismissing.(df[:,c]), :], [c] .=> out_t)
 end
 function clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict = Dict())

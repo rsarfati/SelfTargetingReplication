@@ -14,9 +14,9 @@ using Binscatters, CategoricalArrays, CovarianceMatrices
 # Imports for shorthand
 import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
-#import StatsBase.vcov, CovarianceMatrices.CRHC0
 
-PATH = "/Users/henrygenighx/Desktop/14.771 - Dev/replication" # TODO: SPECIFY PATH TO WORKING DIRECTORY
+# User TODO: Specify path to working directory!
+PATH = "/Users/henrygenighx/Desktop/14.771 - Dev/replication"
 
 # Build output folders if don't already exist
 run(`cd $PATH`)
@@ -69,13 +69,12 @@ include("tables.jl")
 include("figures.jl")
 
 ###### Tables #######
-
-table_1() # MATCH
-table_3() # MATCH
-table_4() # MATCH
-table_5() #
-table_6() #
-table_7() #
+table_1()
+table_3()
+table_4()
+table_5()
+table_6()
+table_7()
 
 ### Run GMM estimation
 #include("gmm.jl")
