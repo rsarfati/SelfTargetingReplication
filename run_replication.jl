@@ -16,11 +16,10 @@ import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
 #import StatsBase.vcov, CovarianceMatrices.CRHC0
 
-# Switch to desired working directory (user-specified file path)
-PATH = "~" # SPECIFY
-run(`cd $PATH`)
+PATH = "~" # TODO: SPECIFY PATH TO WORKING DIRECTORY
 
 # Build output folders if don't already exist
+run(`cd $PATH`)
 !isdir("output")        && run(`mkdir output/`)
 !isdir("output/plots")  && run(`mkdir output/plots/`)
 !isdir("output/tables") && run(`mkdir output/tables/`)
@@ -58,18 +57,18 @@ table_kwargs = Dict(:labels => labels,
 include("core_functions.jl")
 
 # Run GMM estimation
-#include("gmm.jl")
+include("gmm.jl")
 
 # Functions which produce tables and figures
 include("tables.jl")
 include("figures.jl")
 
-###### Build Tables and Figures ##########
-# figures = [eval(Meta.parse("figure_$i")) for i in [1:6...]]
-# tables  = [eval(Meta.parse("table_$i"))  for i in [1, 3:10...]]
-# for result in vcat(figures, tables)
-#     result()
-# end
+# ********** Build Tables {1} ∪ {3-10} & Figures {1:6} **********
+figures = [eval(Meta.parse("figure_$i")) for i in [1:6...]]
+tables  = [eval(Meta.parse("table_$i"))  for i in [1, 3:10...]]
+for result in vcat(figures, tables)
+    result()
+end
 
 ###### Tables #######
 

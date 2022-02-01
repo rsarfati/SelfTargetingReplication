@@ -12,16 +12,16 @@ you run a regression with a link function AND cluster your standard errors.
 function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
                    group::Symbol=Symbol(), clust::Symbol=Symbol(),
                    wts::Vector{F64} = Vector{F64}(), glm_kwargs = Dict())
-
     # Input checks
     if link == ProbitLink()
         @assert group != Symbol() "The `group` kwarg is required for probit. Check inputs."
     end
-
     # Option to include weights for observations
     if !isempty(wts); glm_kwargs[:wts] = wts end
     # Specify strata for FEs in GLM.jl lingo
     if group != Symbol(); glm_kwargs[:contrasts] = Dict(group => DummyCoding()) end
+
+    @show glm_kwargs
 
     # Run regression
     r = glm(f, df, Binomial(), link; glm_kwargs...)
@@ -98,7 +98,7 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 bootstrap_σ::Bool = true, N_bs::Int64 = 1000)
+                 compute_σ::Symbol = :analytic, N_bs::Int64 = 1000)
 
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
@@ -114,7 +114,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     Keyword option for computing boostrap confidence intervals.
     """
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
-                   K::Function = K_normal, bootstrap_σ::Bool = true,
+                   K::Function = K_normal, compute_σ::Symbol = :analytic,
                    cluster_on::Vector = Vector(), N_bs::Int64 = 1000,
                    save_w_ind::Int64 = 0)
         # Eq 2.4
@@ -124,24 +124,35 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
         # Eq 2.2
         m_x = sum(w .* Y) / (sum(w) + N^(-2))
 
-        # Alberto's lecture notes
+        # Alberto's lecture notes on local polynomial regression
         Kx1 = K.((x0 .- X) ./ h)
         i_sum = inv(sum([ Kx1[j] * (1 + X[j]^2) for j=1:N]))
         Kx  = [i_sum * Kx1[i] .* (1 + x0 * X[i]) for i=1:N]
 
-        # Construct sup-t confidence bands
-        if bootstrap_σ
-            df_σ = DataFrame(:Y => Y, :X => X, :Kx => Kx) #TODO???
+        # Construct confidence bands
+        if compute_σ != :none
+            df_σ = DataFrame(:Y => Y, :X => X, :Kx => Kx)
 
             # Case: not clustering SEs
-            V = if isempty(cluster_on)
-                vcov(reg(df_σ, @formula(Y ~ X), weights = :Kx))
+            r_σ = if isempty(cluster_on)
+                reg(df_σ, @formula(Y ~ X), weights = :Kx)
             # Case: clustering SEs
             else
                 df_σ = insertcols!(df_σ, clust => cluster_on)
-                vcov(reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx))
+                reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx)
             end
-            bl, bu = bs_σ(V; draws = N_bs, ind = 2)
+
+            bl, bu = if compute_σ == :bootstrap
+
+                V = vcov(r_σ)
+                bs_σ(V; draws = N_bs, ind = 2)
+
+            elseif compute_σ == :analytic
+                b = 1.96 * stderror(r_σ)[2] / 2
+                -b, b
+            else
+                @error "Implemented options for CIs limited to :bootstrap and :analytic."
+            end
             lb_i = m_x + bl
             ub_i = m_x + bu
             return m_x, lb_i, ub_i
@@ -169,7 +180,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             function CV(h_test)
                 m_i, w_i = zeros(N), zeros(N)
                 for i=1:N
-                    m_i[i], w_i[i] = m_hat(Y, X, X[i], h_test; bootstrap_σ = false, save_w_ind = i)
+                    m_i[i], w_i[i] = m_hat(Y, X, X[i], h_test; compute_σ = :none, save_w_ind = i)
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end
@@ -184,7 +195,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
         y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; cluster_on = cluster_on,
-                                       bootstrap_σ = bootstrap_σ, N_bs = N_bs)
+                                       compute_σ = compute_σ, N_bs = N_bs)
     end
     return y_hat, lb, ub
 end

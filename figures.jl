@@ -97,12 +97,12 @@ function figure_3(; labels::Dict{String,String} = labels)
     plot!(pA, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
     Plots.savefig(pA, "output/plots/fig3A.png")
 
+    # Compute residual unobservable consumption
     r = reg(df, @formula(logc ~ PMTSCORE), cluster(:hhea), save = :residuals)
     insertcols!(df, :eps => Vector{Float64}(r.residuals))
 
     # Unobservable component of log consumption
     x0_grid = collect(range(-1.5; stop = 2, length = 100))
-    # TODO: Fan regression pos def exception
     y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea)
 
     pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
@@ -196,10 +196,9 @@ function figure_5(; labels::Dict{String,String} = labels)
                          df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
 
     pB = plot(x0_grid, y1, legend = :bottomright, xrange = (-2, 2), yrange = (0., 0.8),
-              xl = "Log Consumption", label="Hypothetical Universal Automatic Targeting",
-              yl = "Probability to Receive Benefits", lw = 2, lc = :peach3)
-    plot!(pB, x0_grid, [l1, u1], ls=:dash, lw = 1.5, lc = :peach4, label="")
-
+              xl = "Log Consumption", yl = "Probability to Receive Benefits",
+              label="Hypothetical Universal Automatic Targeting", lw = 2, lc = :peach3)
+    plot!(pB, x0_grid, [l1, u1], lw = 1.5, lc = :peach4, label="", ls=:dash)
     plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="")
     plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
 
