@@ -16,7 +16,7 @@ import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
 #import StatsBase.vcov, CovarianceMatrices.CRHC0
 
-PATH = "~" # TODO: SPECIFY PATH TO WORKING DIRECTORY
+PATH = "/Users/henrygenighx/Desktop/14.771 - Dev/replication" # TODO: SPECIFY PATH TO WORKING DIRECTORY
 
 # Build output folders if don't already exist
 run(`cd $PATH`)
@@ -57,18 +57,18 @@ table_kwargs = Dict(:labels => labels,
 include("core_functions.jl")
 
 # Run GMM estimation
-include("gmm.jl")
+#include("gmm.jl")
 
 # Functions which produce tables and figures
 include("tables.jl")
 include("figures.jl")
 
 # ********** Build Tables {1} ∪ {3-10} & Figures {1:6} **********
-figures = [eval(Meta.parse("figure_$i")) for i in [1:6...]]
-tables  = [eval(Meta.parse("table_$i"))  for i in [1, 3:10...]]
-for result in vcat(figures, tables)
-    result()
-end
+# figures = [eval(Meta.parse("figure_$i")) for i in [1:6...]]
+# tables  = [eval(Meta.parse("table_$i"))  for i in [1, 3:10...]]
+# for result in vcat(figures, tables)
+#     result()
+# end
 
 ###### Tables #######
 
@@ -88,7 +88,7 @@ table_7() #  weird
 
 figure_1()
 figure_2()
-#figure_3() #PosDefException: matrix is not positive definite; Cholesky factorization failed.
-#figure_4()
-#figure_5()
-#figure_6()
+figure_3()
+figure_4()
+figure_5()
+figure_6()

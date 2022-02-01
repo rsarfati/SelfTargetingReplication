@@ -138,20 +138,22 @@ function figure_4(; labels::Dict{String,String} = labels)
                out_t = Dict([:getbenefit, :maintreatment] .=> F64))
 
     # Unobservable component of log consumption
-    x0_grid = collect(range(11.5; stop = 15.5, length = 100))
+    x0_grid = collect(range(11.25; stop = 15.25, length = 100))
 
-    # TODO: fan reg - pos def exception
+    # I did a bit of experimentation setting different bandwidths to back out
+    # what was likely being used in the Stata code! Cross-validation chooses a band-
+    # width which is pretty close, but doesn't match the figure in the paper as well.
     y1, u1, l1 = fan_reg(@formula(getbenefit ~ logc),
-                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea)
+                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea, bw = 0.2)
     y2, u2, l2 = fan_reg(@formula(getbenefit ~ logc),
-                      df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
+                      df[df.maintreatment.==2,:],    x0_grid; clust = :hhea, bw = 0.2)
 
-    pB = plot(x0_grid, y1, legend = :bottomright, xrange = (-2, 2), yrange = (0., 0.8),
+    pB = plot(x0_grid, y1, legend = :topright, xrange = (11, 15.4), yrange = (0., 0.4),
               xl = "Log Consumption", label="Automatic Screening",
-              yl = "Probability to Receive Benefits", lw = 2, lc = :peach3)
-    plot!(pB, x0_grid, [l1, u1], ls=:dash, lw = 1.5, lc = :peach4, label="")
+              yl = "Probability to Receive Benefits", lw = 2, lc = :lightpink1)
+    plot!(pB, x0_grid, [l1, u1], ls=:dash, lw = 1.5, lc = :palevioletred, label="")
 
-    plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="")
+    plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="Self-Targeting")
     plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
 
     Plots.savefig(pB, "output/plots/fig4B.png")
@@ -187,19 +189,19 @@ function figure_5(; labels::Dict{String,String} = labels)
                out_t = Dict([:maintreatment] .=> F64))
 
     # Unobservable component of log consumption
-    x0_grid = collect(range(11.5; stop = 15.5, length = 100))
+    x0_grid = collect(range(11.2; stop = 15.5, length = 100))
 
-    # TODO: fan reg - pos def exception
+    # Run both Fan regressions
     y1, u1, l1 = fan_reg(@formula(getbenefit_hyp ~ logc),
-                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea)
+                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea, bw = 0.18)
     y2, u2, l2 = fan_reg(@formula(getbenefit_hyp ~ logc),
-                         df[df.maintreatment.==2,:], x0_grid; clust = :hhea)
+                         df[df.maintreatment.==2,:], x0_grid; clust = :hhea, bw = 0.2)
 
-    pB = plot(x0_grid, y1, legend = :bottomright, xrange = (-2, 2), yrange = (0., 0.8),
+    pB = plot(x0_grid, y1, legend = :topright, xrange = (11, 15.5), yrange = (0., 0.4),
               xl = "Log Consumption", yl = "Probability to Receive Benefits",
-              label="Hypothetical Universal Automatic Targeting", lw = 2, lc = :peach3)
-    plot!(pB, x0_grid, [l1, u1], lw = 1.5, lc = :peach4, label="", ls=:dash)
-    plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="")
+              label="Hypothetical Universal Automatic Targeting", lw = 2, lc = :lightpink1)
+    plot!(pB, x0_grid, [l1, u1], lw = 1.5, lc = :palevioletred, label="", ls=:dash)
+    plot!(pB, x0_grid, y2,       lw = 2,   lc = :cyan3, label="Self-Targeting")
     plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
 
     Plots.savefig(pB, "output/plots/fig5B.png")
@@ -218,12 +220,11 @@ function figure_6(; labels::Dict{String,String} = labels)
     r = reg(df,                  @formula(totcost_pc ~ c + c2))
     r = reg(df[df.c .< 2000000,:], @formula(totcost_pc ~ c + c2))
 
-    # TODO: Fan regression pos def exception
-    x0_grid = collect(range(0; stop = 60000, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid)
+    x0_grid = collect(range(0; stop = 4000000, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea, bw=3e5)
 
     # Plot Fan regression
-    p = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
+    p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4000000), yrange = (0, 60000),
              xl = "Per Capita Consumption", yl = "Total Costs per Capita",
              lw = 2, lc = :cyan3)
     plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
