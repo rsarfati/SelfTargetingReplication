@@ -21,8 +21,6 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
     # Specify strata for FEs in GLM.jl lingo
     if group != Symbol(); glm_kwargs[:contrasts] = Dict(group => DummyCoding()) end
 
-    @show glm_kwargs
-
     # Run regression
     r = glm(f, df, Binomial(), link; glm_kwargs...)
 

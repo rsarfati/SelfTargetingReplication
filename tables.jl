@@ -175,6 +175,9 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                                 unique(d.kecagroup))
     df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
 
+    @show size(df_drop(:getbenefit, clean(df, [:getbenefit, :logc, :selftargeting,
+                                    :logc_ST, :kecagroup], F64)))
+
     # Run conditional logit regressions, clustering at stratum level
     μ_5b[3], r_5b[3] = glm_clust(@formula(getbenefit ~ selftargeting + logc + logc_ST + kecagroup),
                                  df_drop(:getbenefit, clean(df, [:getbenefit, :logc, :selftargeting,

@@ -37,14 +37,22 @@ labels = Dict("logconsumption" => "Log Consumption",
               "PMTSCORE" => "Observable Consumption",
               "eps" => "Unobservable Consumption",
               "logc" => "Log Consumption",
-              "logc_ST" => "Log Cons. x self-targeting",
-              "logc & selftargeting" => "Log Cons. x self-targeting",
+              "logc_ST" => "Log Cons. \$\\times\$ self-targeting",
+              "close_logc" => "Close \$\\times\$ log cons.",
+              "logc & selftargeting" => "Log Cons. \$\\times\$ self-targeting",
               "selftargeting" => "Self-targeting",
               "getbenefits" => "Log Consumption (OLS)",
               "getbenefit" => "\\substack{Get Benefits\\\\(Logit)}",
               "mistarget" => "\\substack{Error\\\\(Logit)}",
               "excl_error" => "\\substack{Excl. Error\\\\(Logit)}",
               "incl_error" => "\\substack{Incl. Error\\\\(Logit)}",
+              "benefit_hyp" => "\\substack{Get Benefits\\\\(Logit)}",
+              "mistarget_hyp" => "\\substack{Error\\\\(Logit)}",
+              "excl_err_hyp" => "\\substack{Excl. Error\\\\(Logit)}",
+              "incl_err_hyp" => "\\substack{Incl. Error\\\\(Logit)}",
+              "close" => "Close subtreatment",
+              ["inc$i" => "Consumption quintile $i" for i=2:5]...,
+              ["closeinc$i" => "Close \$\\times\$ consumption quintile $i" for i=2:5]...,
               "__LABEL_CUSTOM_STATISTIC_comments__" => "Stratum fixed effects",
               "__LABEL_CUSTOM_STATISTIC_means__" => "Mean of Dep. Variable")
 
@@ -56,30 +64,22 @@ table_kwargs = Dict(:labels => labels,
 # Load helper functions
 include("core_functions.jl")
 
-# Run GMM estimation
-#include("gmm.jl")
-
 # Functions which produce tables and figures
 include("tables.jl")
 include("figures.jl")
-
-# ********** Build Tables {1} ∪ {3-10} & Figures {1:6} **********
-# figures = [eval(Meta.parse("figure_$i")) for i in [1:6...]]
-# tables  = [eval(Meta.parse("table_$i"))  for i in [1, 3:10...]]
-# for result in vcat(figures, tables)
-#     result()
-# end
 
 ###### Tables #######
 
 table_1() # MATCH
 table_3() # MATCH
 table_4() # MATCH
-table_5() #  weird
-table_6() #  weird
-table_7() #  weird
+table_5() #
+table_6() #
+table_7() #
 
-# GMM
+### Run GMM estimation
+#include("gmm.jl")
+
 # table_8()
 # table_9()
 # table_10()
