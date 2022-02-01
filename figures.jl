@@ -217,14 +217,14 @@ function figure_6(; labels::Dict{String,String} = labels)
                [:consumption  => :c]), Dict([:c, :totcost_pc] .=> F64))
     # Confirm concavity of graph
     insertcols!(df, :c2 => df.c .^ 2)
-    r = reg(df,                  @formula(totcost_pc ~ c + c2))
-    r = reg(df[df.c .< 2000000,:], @formula(totcost_pc ~ c + c2))
+    r = reg(df,                    @formula(totcost_pc ~ c + c2))
+    r = reg(df[df.c .< 2e6,:], @formula(totcost_pc ~ c + c2))
 
-    x0_grid = collect(range(0; stop = 4000000, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea, bw=3e5)
+    x0_grid = collect(range(0; stop = 4e6, length = 100))
+    y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea)
 
     # Plot Fan regression
-    p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4000000), yrange = (0, 60000),
+    p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4e6), yrange = (0, 6e4),
              xl = "Per Capita Consumption", yl = "Total Costs per Capita",
              lw = 2, lc = :cyan3)
     plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)

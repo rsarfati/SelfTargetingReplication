@@ -146,7 +146,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                 V = vcov(r_σ)
                 bs_σ(V; draws = N_bs, ind = 2)
             elseif compute_σ == :analytic
-                b = (1.96 * stderror(r_σ)[2]) / 2
+                b = stderror(r_σ)[2]
                 -b, b
             else
                 @error "Implemented options for CIs limited to :bootstrap and :analytic."
@@ -182,7 +182,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end
-            h_grid = collect(range(0.25, stop = 2.0, length = 30))
+            h_grid = collect(range(0.25, stop = x0_grid[end]/5, length = 30))
             h_grid[argmin(CV.(h_grid))]
         else
             @error "Provided bandwidth selection method invalid -- check input!"
