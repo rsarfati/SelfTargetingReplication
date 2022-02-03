@@ -1,214 +1,284 @@
-function compute_quantiles(df::DataFrame)
+"""
+```
+compute_quantiles(df::DataFrame;
+                  N_q = Dict([:consumption, :pmtscore, :unobs_cons, :distt] .=>
+                             [5, 3, 3, 4]]))
+```
+Computes quantiles of variables in inputted dictionary, and puts the associated
+categorical labels into dataframe for series. Default inputs are observed consumption,
+PMT, unobs. consumption (w), distance
 
+Corresponds to `load_data.m` file in replication code.
+"""
+function compute_quantiles(df::DataFrame; N_q = Dict([:consumption, :PMTSCORE, :unobs_cons,
+                                                      :distt] .=> [5, 3, 3, 4]))
     # Helper functions
-    quant(N::Int64) = [n/N for n=1:N-1]
+    quant(N::Int64)     = [n/N for n=1:N-1]
     assign_q(x, quants) = [minimum(vcat(findall(>=(x[i]), quants),
                                         length(quants)+1)) for i=1:length(x)]
 
     # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
-    insertcols!(df, :log_c => log.(df.consumption))
-    insertcols!(df, :unobs_cons => residuals(reg(df, @formula(log_c ~ pmtscore)), df))
-
-    # Quantilies of observed consumption, PMT, unobs. consumption (w), distance
-    q_vars = [:consumption, :pmtscore, :unobs_cons, :distt]
-    N_q    = Dict(q_vars .=> [5, 3, 3, 4])
+    !("logc"       in names(df)) && insertcols!(df, :log_c => log.(df.consumption))
+    !("unobs_cons" in names(df)) && insertcols!(df, :unobs_cons =>
+                                    residuals(reg(df, @formula(log_c ~ PMTSCORE)), df))
 
     # Assign categorical IDs for quantiles
-    for v in q_vars
-        v_name = Symbol(string(v) * "_q_idx"))
-        insertcols!(df, v_name => assign_q(df[:,v], quantile(df[:,v] quant(N_q[v])))
+    for v in keys(N_q)
+        v_name = Symbol(string(v) * "_q_idx")
+        insertcols!(df, v_name => assign_q(df[:,v], quantile(df[:,v], quant(N_q[v]))))
     end
-    # Extra thing?
-    #insertcols!(df, :obs_cons_terc => assign_q(df.consumption, quantile(df.consumption, quant(3))))
     return df
 end
 
-function showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta)
+"""
+```
+compute_moments(df0::D, showup::Vector{T}) where {T<:Number,D<:DataFrame}
+```
+Moments:
+1-10.  mean showup rates in (measured) consumption quintiles in far and close
+       subtreatment (separately). -> Ten moments
+11-14. mean(showup-showuphat) of four extreme cells in grid of [tertiles of
+       pmt * tertiles of w] (residual from the regression of log(consumption)
+       on pmtscore) -> Four moments
+15-16. two extreme cells in quartiles of distance -> Two moments
+17-20. λ moments -> Four moments
+"""
+function compute_moments(df0::D, showup::Vector{T} = Vector(df0.showup),
+                         showup_hat::Vector{T}, true_λ, belief_λ,
+                         induced_λ) where {T<:Union{Float64,Int64}, D<:DataFrame}
 
-    global consumption totcost_pc benefit FE FE2 moneycost pmtscore
-    global mu_con_true mu_beta_true
+    # Initialize dictionary, manage NaNs in data
+    moments = Dict{Int,Float64}()
+    showup  = (showup .== 1) .& .!ismissing.(showup)
 
+    # Far/close subtreatment, i=1:5th quintile of consumption
+    for i=1:5
+        far_i_quant   = (df0.consumption_q_idx .== i) .&
+                                                  iszero.(df0.closesubtreatment)
+        close_i_quant = (df0.consumption_q_idx .== i) .&
+                                                .!iszero.(df0.closesubtreatment)
+        moments[i]   = sum(showup[far_i_quant])   / sum(far_i_quant)
+        moments[5+i] = sum(showup[close_i_quant]) / sum(close_i_quant)
+    end
 
-    mu_con_true = reg_const2(1);
-    mu_beta_true = reg_pmt2(1);
+    # {Top, bottom tercile} x {observable, unobservable consumption}
+    TB = (df0.PMTSCORE_q_idx .== 3) .& (df0.unobs_cons_q_idx .== 1)
+    TT = (df0.PMTSCORE_q_idx .== 3) .& (df0.unobs_cons_q_idx .== 3)
+    BB = (df0.PMTSCORE_q_idx .== 1) .& (df0.unobs_cons_q_idx .== 1)
+    BT = (df0.PMTSCORE_q_idx .== 1) .& (df0.unobs_cons_q_idx .== 3)
 
-    lambda_con_true = reg_nofe_const(1);
-    lambda_beta_true = reg_nofe_logcon(1);
+    moments[11] =  sum(showup[TB] - showup_hat[TB]) / sum(TB)
+    moments[12] =  sum(showup[TT] - showup_hat[TT]) / sum(TT)
+    moments[13] =  sum(showup[BB] - showup_hat[BB]) / sum(BB)
+    moments[14] =  sum(showup[BT] - showup_hat[BT]) / sum(BT)
 
+    # Top and bottom distance quartiles
+    T_D = (df0.distt_quant .== 4)
+    B_D = (df0.distt_quant .== 1)
 
-    # convert mean and standard deviation into alpha and beta
-    s = sqrt(3*(sig_eps.^2)./(pi.^2))
-    alphaa = mu_eps./s
-    beta = 1./s
+    moments[15] =  sum(showup[T_D] - showup_hat[T_D]) / sum(T_D)
+    moments[16] =  sum(showup[B_D] - showup_hat[B_D]) / sum(B_D)
+
+    # Mean λ function moments
+    N_show = sum(showup)
+    moms[17] = sum((belief_λ - df0.getbenefit) .* showup) / N_show
+    moms[18] = sum((belief_λ - df0.getbenefit) .*
+                        (df0.log_c - mean(df0.log_c)) .* showup) / N_show
+    moms[19] = sum((induced_λ - df0.getbenefit) .* showup) / N_show
+    moms[20] = sum((induced_λ - df0.getbenefit) .*
+                        (df0.log_c - mean(df0.log_c)) .* showup) / N_show
+
+    # If showup hat exactly zero, the λ moments are NaN; replace w/ large number
+    moments[isnan.(moments)] .= 10000.
+    return moments
+end
+
+"""
+Evaluate probability of showing up for each i. (Eq 22)
+"""
+function showuphat(df, μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ;
+                   N_grid = 100)
+
+    # Constants
+    μ_con_true = df.reg_const2[1]
+    μ_β_true   = df.reg_pmt2[1]
+    λ_con_true = df.reg_nofe_const[1]
+    λ_β_true   = df.reg_nofe_logcon[1]
+
+    # convert mean and standard deviation into alpha and β
+    s      = sqrt( 3 * (σ_ϵ .^ 2) ./ (pi .^ 2))
+    alphaa = μ_ϵ ./ s
+    β      = 1 ./ s
 
     # Lower and upper bound, grid density for the numerical integration over eta
-    lb = -eta_sd*4 ub = -lb
-    dense = 100
-    siz = size(consumption,1)
+    lb    = -η_sd*4
+    ub    = -lb
+    N   = length(df.consumption)
 
-    #Prepare meshgrid
-    eta = linspace(lb,ub,dense)'
-    ETA = eta * ones(1,siz)
-    Consumption = ones(dense,1)*(consumption')
-    Pmtscore = ones(dense,1)*(pmtscore')
-    Totcost_pc = ones(dense,1)*(totcost_pc')
-    Benefit =  ones(dense,1)*(benefit')
-    FFE2 = ones(dense,1)*(FE2')
-    FFE  = ones(dense,1)*(FE')
-    Moneycost = ones(dense,1)*(moneycost')
+    # Prepare mesh grid
+    eta         = linspace(lb, ub, N_grid)'
+    ETA         = η * ones(1,λ)
+    Consumption = ones(N_grid,1)*(consumption')
+    Pmtscore    = ones(N_grid,1)*(pmtscore')
+    Totcost_pc  = ones(N_grid,1)*(totcost_pc')
+    Benefit     = ones(N_grid,1)*(benefit')
+    FFE2        = ones(N_grid,1)*(FE2')
+    FFE         = ones(N_grid,1)*(FE')
+    Moneycost   = ones(N_grid,1)*(moneycost')
 
-    #Calculate integrand
-    #Present Utility (Cost function is adjusted because "totalcost" given is based on noisy consumption measure.)
-    relu_2day = (Consumption.*exp(-ETA)-Totcost_pc.*exp(-ETA)+(1-1.*exp(-ETA)).*Moneycost)-(Consumption.*exp(-ETA))
+    # Calculate integrand
+    # Present Utility (Cost function is adjusted because "totalcost" given is based on noisy consumption measure.)
+    relu_2day = (Consumption .* exp.(-ETA) - Totcost_pc .* exp(-ETA) + (1 - 1 .* exp(-ETA)) .* Moneycost) - (Consumption .* exp.(-ETA))
 
-    #Future Utility: note that normcdf() in the middle is mu function
-    relu_2mor = (Consumption.*exp(-ETA)+Benefit)-(Consumption.*exp(-ETA))
+    # Future Utility: note that normcdf() in the middle is mu function
+    relu_2mor = (Consumption .* exp(-ETA) + Benefit) - (Consumption .* exp.(-ETA))
+    Mu     = normcdf(μ_con_true + FFE2 + μ_β_true * (Pmtscore-ETA))
+    Lambda = normcdf(λ_con_belief+λ_β_belief * (log.(Consumption)-ETA))
 
+    prob_s = (1 - 1 ./ (1 + exp(β .* (relu_2day + 12 .* delta .* Mu     .* relu_2mor) + alphaa)))
+    prob_u = (1 - 1 ./ (1 + exp(β .* (relu_2day + 12 .* delta .* Lambda .* relu_2mor) + alphaa)))
 
-    Mu     = normcdf(mu_con_true+FFE2+mu_beta_true*(Pmtscore-ETA))
-    Lambda = normcdf(lambda_con_belief+lambda_beta_belief*(log(Consumption)-ETA))
-
-    prob_s = (1-1./(1+exp(beta.*(relu_2day + 12.*delta.*Mu    .*relu_2mor) + alphaa)))
-    prob_u = (1-1./(1+exp(beta.*(relu_2day + 12.*delta.*Lambda.*relu_2mor) + alphaa)))
-
-    integ =(alpha*prob_s + (1-alpha)*prob_u ).*normpdf(ETA, 0, eta_sd)
+    integ = (alpha * prob_s + (1 - alpha) * prob_u ) .* normpdf(ETA, 0, eta_sd)
 
     showup_hat = real(trapz(eta,integ)')
 
     # Rather than running probit, apply WLS.
     # Calculate inverse of mu Phi(-1)(mu) where Phi is standard normal CDF
-    muinv = mu_con_true+FE2+mu_beta_true*(pmtscore)
+    muinv = μ_con_true + FE2 + μ_β_true * (pmtscore)
     muinv_t = sqrt(showup_hat).*muinv # Conversion for the frequency weight
     const_t = sqrt(showup_hat) # Conversion for the weight
     logcons_t = sqrt(showup_hat).*log(consumption) # Conversion for the weight
     X = [const_t, logcons_t]
-    sigma2 = sqrt(sum(((eye(size(consumption,1))-X/(X'*X)*X')*muinv_t).^2)/(size(consumption,1)-2))
+    sigma2 = sqrt(sum(((eye(N) - X / (X' * X) * X') * muinv_t) .^ 2) / (N - 2))
     coef = 1/sigma2*(X'*X)\X'*muinv_t # Divide by sigma to impose sd = 1 for the error term
-    induced_lambda = normcdf([ones(size(consumption)),log(consumption)]*coef)
-
-#         initial_lambda = normcdf(lambda_con_belief+lambda_beta_belief*log(consumption))
-#         true_lambda    = normcdf(lambda_con_true+lambda_beta_true*log(consumption))
-    return showup_hat, induced_lambda
+    induced_λ = normcdf([ones(N,1), log.(consumption)] * coef)
+    return showup_hat, induced_λ
 end
 
 """
-###########################################################################
-# Moments:
-# 1. mean showup rates in (measured) consumption quintiles in far and close
-     subtreatment (separately). -> Ten moments
-# 2. mean(showup-showuphat) of four extreme cells in grid of [tertiles of
-#    pmt * tertiles of w] (residual from the regression of log(consumption) on
-#    pmtscore) -> Four moments
-# 3. two extreme cells in quartiles of distance -> Two moments
-# 4. Lambda moments -> Four moments
-###########################################################################
+Two Stage Feasible GMM for Targeting Paper
+
+# Parameters:
+# 1~2. mean, variance of epsilon (utility shock)
+# 3.   sigma (coef of relative risk aversion = rho, sorry for the confusion)
+# 4.   alpha (fraction of people who are sophisticated)
+# 5~6. constant and coefficient for the λ function (probability of
+       getting benefit given showing up)
+
+## Minimize Objective Function Locally From Many Starting Values
+#	Use matlab's built-in lsqnonlin function to optimize from a random set
+#	of initial values.
+
+## How are moments computed?
+#	For each obs, calculate showup_hat as the probability that eps>-gain
+#	(i.e. that gain+epsilon>0) This is just 1 - the cdf
+#	of epsilon evaluated at (-gain_i).
 """
-"""
-```
-compute_moments(df0::D, showup::Vector{T}) where {T<:Number,D<:DataFrame}
-```
-I'm sorry these functions are so ugly, and that there are two of them.
-(Multiple dispatch: want functions type-stable for Optim speed.)
-"""
-function compute_moments(df0::D, showup::Vector{T} =
-                            Vector(df0.showup)) where {T<:Union{Float64,Int64}, D<:DataFrame}
-    moments = Dict()
-    moments[1] = [mean(showup[(df0.obs_cons_quant .== i) .&
-                              iszero.(df0.closesubtreatment)]) for i=1:5]
-    moments[2] = [mean(showup[(df0.obs_cons_quant .== i) .&
-                              .!iszero.(df0.closesubtreatment)]) for i=1:5]
-    moments[3] =  mean(showup[(df0.obs_cons_terc .== 3) .& (df0.unobs_cons_quant .== 1)])
-    moments[4] =  mean(showup[(df0.obs_cons_terc .== 3) .& (df0.unobs_cons_quant .== 3)])
-    moments[5] =  mean(showup[(df0.obs_cons_terc .== 1) .& (df0.unobs_cons_quant .== 1)])
-    moments[6] =  mean(showup[(df0.obs_cons_terc .== 1) .& (df0.unobs_cons_quant .== 3)])
-    moments[7] =  mean(showup[df0.distt_quant .== 4])
-    moments[8] =  mean(showup[df0.distt_quant .== 1])
-    return moments
-end
-function compute_moments(df0::D, show_i::T =
-                         df0.showup) where {T<:Union{Float64,Int64}, D<:DataFrameRow}
-    moments = Dict()
-    moments[1] = [((df0.obs_cons_quant .== i) .&
-                  iszero.(df0.closesubtreatment)) ? show_i : 0.0 for i=1:5]
-    moments[2] = [((df0.obs_cons_quant .== i) .&
-                  .!iszero.(df0.closesubtreatment)) ? show_i : 0.0 for i=1:5]
-    moments[3] =  (df0.obs_cons_terc .== 3) .& (df0.unobs_cons_quant .== 1) ? show_i : 0.0
-    moments[4] =  (df0.obs_cons_terc .== 3) .& (df0.unobs_cons_quant .== 3) ? show_i : 0.0
-    moments[5] =  (df0.obs_cons_terc .== 1) .& (df0.unobs_cons_quant .== 1) ? show_i : 0.0
-    moments[6] =  (df0.obs_cons_terc .== 1) .& (df0.unobs_cons_quant .== 3) ? show_i : 0.0
-    moments[7] =  df0.distt_quant .== 4 ? show_i : 0.0
-    moments[8] =  df0.distt_quant .== 1 ? show_i : 0.0
-    return moments
-end
-function moments(showup_hat, true_lambda, belief_lambda, induced_lambda, delta_mom)
+function GMM_problem(delta_mom, danual, irate, eta_sd, passes, rng_seed, sample)
 
-    global consumption showup close nquant
-    global quant_idx quant_idx_pmt quant_idx_w quant_idx_dist
-    global q_pmt_max q_pmt_min q_w_max q_w_min q_dist_max q_dist_min
-    global getbenefit
+    df = compute_quantiles(df)
 
-    # Store moments here
-    N    = size(consumption, 1)
-    moms = zeros(N, nquant*2+10)
+    λ_con_true = df.reg_nofe_const[1]
+    λ_β_true   = df.reg_nofe_logcon[1]
 
-    for i=1:5 # should be nquant, not 5, ideally
+    # Initialize random number generator
+    rng(rng_seed)
 
-        # showup rates in far group by consuption quintile
+    # generate random sets of #passes possible initial values for each parameter
+    # "get benefit" function, λ for the naive people
+    λ_con_rand = λ_con_true  * (0.8 + 0.4 * rand(passes,1))
+    λ_β_rand = λ_β_true * (0.8 + 0.4 * rand(passes,1)) # These two are parameters to match the initial value
 
-        Ntemp =              sum(quant_idx==i & close==0)
-        moms[:,i] =     showup.*(quant_idx==i & close==0)*N/Ntemp -
-                    showup_hat.*(quant_idx==i & close==0)*N/Ntemp
+    # Currently imposing some function of random rho + noise
+    σ_ϵ_rand = 26805 .* (0.8 .+ 0.4 .* rand(passes,1))
+    μ_ϵ_rand = -26215 .* (0.8 .+ 0.4 .* rand(passes,1))
 
-        # if delta_mom=1 we use the momserence between far and close (in
-        # each quintile). If delta_mom=0 we use the showup mean in the
-        # close consumption quintile
+    alpha_rand = 0.001+0.999*rand(passes,1)
 
-        Ntemp  =              sum(quant_idx==i & close==1)
-        Ntemp0 =              sum(quant_idx==i & close==0)
+    # compute NPV delta (yearly)
+    irm = 1 / irate
+    delta = danual * (1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
 
-        moms[:,5+i] =    showup.*(quant_idx==i & close==1)*N/Ntemp -
-                         showup.*(quant_idx==i & close==0)*N/Ntemp0*delta_mom  -
-                     showup_hat.*(quant_idx==i & close==1)*N/Ntemp +
-                     showup_hat.*(quant_idx==i & close==0)*N/Ntemp0*delta_mom
+    ## First Stage: Find params with identity weighting matrix
+    @show "First Stage Begin"
+
+    Fval_fs       = zeros(passes,1)
+    Fitθ_fs       = zeros(passes,5)
+    Showup_hat_fs = zeros(size(consumption,1),passes)
+    Induced_λ_fs  = zeros(size(consumption,1),passes)
+    exitflag_fs   = zeros(passes,1)
+
+    for p = 1:passes
+        # select initial parameters
+        θ_in = [μ_ϵ_rand[p,1],
+                σ_ϵ_rand[p,1],
+                alpha_rand[p,1],
+                λ_con_rand[p,1],
+                λ_β_rand[p,1]]
+
+        # begin with identity weigthing matrix
+        W0 = eye(20)
+
+        Fitθ_fs[p,:], Fval_fs[p], Showup_hat_fs[:,p],
+        Induced_λ_fs[:,p], exitflag_fs[p] = run_GMM(θ_in, eta_sd, delta, W0, delta_mom)
     end
 
-    Ntemp =                     sum(quant_idx_pmt==q_pmt_max & quant_idx_w==q_w_min)
-    moms[:,nquant*2+1] =     showup.*(quant_idx_pmt==q_pmt_max & quant_idx_w==q_w_min)*N/Ntemp -
-                       showup_hat.*(quant_idx_pmt==q_pmt_max & quant_idx_w==q_w_min)*N/Ntemp
+    minindex = argmin(Fval_fs)
+    θ_fs     = Fitθ_fs[minindex,:]
 
-    Ntemp =                     sum(quant_idx_pmt==q_pmt_max & quant_idx_w==q_w_max)
-    moms[:,nquant*2+2] =     showup.*(quant_idx_pmt==q_pmt_max & quant_idx_w==q_w_max)*N/Ntemp -
-                       showup_hat.*(quant_idx_pmt==q_pmt_max & quant_idx_w==q_w_max)*N/Ntemp
+    ## Second Stage: Find Params with Optimal Weighting Matrix
+    @show "Second Stage Begin"
+    #θ_fs = [-67020	60897	0.22044	8.6504	-0.77535]
+     μ_ϵ  = θ_fs[1]
+     σ_ϵ = θ_fs[2]
+     alpha   = θ_fs[3]
+     λ_con_belief  = θ_fs[4]
+     λ_β_belief = θ_fs[5]
 
-    Ntemp =                     sum(quant_idx_pmt==q_pmt_min & quant_idx_w==q_w_min)
-    moms[:,nquant*2+3] =     showup.*(quant_idx_pmt==q_pmt_min & quant_idx_w==q_w_min)*N/Ntemp -
-                       showup_hat.*(quant_idx_pmt==q_pmt_min & quant_idx_w==q_w_min)*N/Ntemp
+     showup_hat, induced_λ = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta)
 
-    Ntemp =                     sum(quant_idx_pmt==q_pmt_min & quant_idx_w==q_w_max)
-    moms[:,nquant*2+4] =     showup.*(quant_idx_pmt==q_pmt_min & quant_idx_w==q_w_max)*N/Ntemp -
-                       showup_hat.*(quant_idx_pmt==q_pmt_min & quant_idx_w==q_w_max)*N/Ntemp
+     belief_λ  = normcdf(λ_con_belief+λ_β_belief*log(consumption))
+     true_λ    = normcdf(λ_con_true  +λ_β_true  *log(consumption))
 
-    Ntemp =                     sum(quant_idx_dist==q_dist_max)
-    moms[:,nquant*2+5] =     showup.*(quant_idx_dist==q_dist_max)*N/Ntemp -
-                       showup_hat.*(quant_idx_dist==q_dist_max)*N/Ntemp
+    moms = moments( showup_hat, true_λ, belief_λ, induced_λ, delta_mom )
 
-    Ntemp =                     sum(quant_idx_dist==q_dist_min)
-    moms[:,nquant*2+6] =     showup.*(quant_idx_dist==q_dist_min)*N/Ntemp -
-                       showup_hat.*(quant_idx_dist==q_dist_min)*N/Ntemp
+    N = size(consumption,1)
+    Winv = (moms' * moms) / N
+    W = inv(Winv)
+    Whalf = chol(W)'
+    norm((Whalf * Whalf') - W) #check decomposition worked.
 
-    Ntemp = sum(showup==1)
-    moms[:,nquant*2+7] = (belief_lambda-getbenefit).*(showup==1)*N/Ntemp
-    moms[:,nquant*2+8] = (belief_lambda-getbenefit).*(log(consumption)-mean(log(consumption))).*(showup==1)*N/Ntemp
+    Fval_ss       = zeros(passes,1)
+    Fitθ_ss       = zeros(passes,5)
+    Showup_hat_ss = zeros(size(consumption,1),passes)
+    Induced_λ_ss  = zeros(size(consumption,1),passes)
+    exitflag_ss   = zeros(passes,1)
 
-    moms[:,nquant*2+9] = (induced_lambda-getbenefit).*(showup==1)*N/Ntemp
-    moms[:,nquant*2+10] =(induced_lambda-getbenefit).*(log(consumption)-mean(log(consumption))).*(showup==1)*N/Ntemp
+    for p = 1:passes
+        tic
+        # select initial parameters (the same ones as in first stage)
+        θ_in = [μ_ϵ_rand[p,1],
+                σ_ϵ_rand[p,1],
+                alpha_rand[p,1],
+                λ_con_rand[p,1],
+                λ_β_rand[p,1]]
 
-    # if showup hat identically zero the lambda moments are NaN
-    # replace with large number
-    if !isempty(findall(isnan, moms))
-        @show "Error: isnan in moments. Replacing with large number."
-        moms[isnan.(moms)] .= 10000
+        # use optimal weigthing matrix Whalf
+        Fitθ_ss[p,:], Fval_ss[p], Showup_hat_ss[:,p], Induced_λ_ss[:,p], exitflag_ss[p] =
+            run_GMM(  θ_in, eta_sd, delta, Whalf, delta_mom )
     end
+
+    minindex = argmin(Fval_ss)
+    ismax = (1:passes) .== minindex
+
+    all_θ = [μ_ϵ_rand, Fitθ_fs[:,1], Fitθ_ss[:,1],
+              σ_ϵ_rand,Fitθ_fs[:,2], Fitθ_ss[:,2],
+              alpha_rand,  Fitθ_fs[:,3], Fitθ_ss[:,3],
+              λ_con_rand,  Fitθ_fs[:,4], Fitθ_ss[:,4],
+              λ_β_rand, Fitθ_fs[:,5], Fitθ_ss[:,5],
+              Fval_fs, Fval_ss, exitflag_fs, exitflag_ss, ismax']
+
+    return W, all_θ
 end
 
 
@@ -216,26 +286,24 @@ end
 function GMM_obj(x, eta_sd, delta, Whalf, delta_mom)
     #GMM_obj compute the product between the moment values (at given parameter
     #values) and Cholsky half of the weighting matrix
+    global λ_con_true λ_β_true
 
-    global consumption
-    global lambda_con_true lambda_beta_true
-
-    mu_eps  = x(1)
-    sig_eps = x(2)
+    μ_ϵ  = x(1)
+    σ_ϵ = x(2)
     alpha   = x(3)
-    lambda_con_belief  = x(4)
-    lambda_beta_belief = x(5)
+    λ_con_belief  = x(4)
+    λ_β_belief = x(5)
 
-    [ showup_hat, induced_lambda ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta)
+    showup_hat, induced_λ = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta)
 
-    belief_lambda  = normcdf(lambda_con_belief+lambda_beta_belief*log(consumption))
-    true_lambda    = normcdf(lambda_con_true  +lambda_beta_true  *log(consumption))
+    belief_λ  = normcdf(λ_con_belief+λ_β_belief*log(consumption))
+    true_λ    = normcdf(λ_con_true  +λ_β_true  *log(consumption))
 
-    moms = moments( showup_hat, true_lambda, belief_lambda, induced_lambda, delta_mom )
+    moms = moments( showup_hat, true_λ, belief_λ, induced_λ, delta_mom )
 
     return mean(moms,1) * Whalf
-
 end
+
 
 function run_GMM(params_in, eta_sd, delta, Whalf, delta_mom)
 
@@ -248,152 +316,12 @@ function run_GMM(params_in, eta_sd, delta, Whalf, delta_mom)
         lsqnonlin(@(x)GMM_obj(x, eta_sd, delta, Whalf, delta_mom), params_in, lb1, ub1, options2)
 
     # return showup_hat_return
-    showuphat_return, induced_lambda_return = showuphat(fitparams[1:5], eta_sd, delta)
-    return fitparams, fval, showuphat_return, induced_lambda_return, exitflag
+    showuphat_return, induced_λ_return = showuphat(fitparams[1:5], eta_sd, delta)
+    return fitparams, fval, showuphat_return, induced_λ_return, exitflag
 
 end
 
-"""
-Two Stage Feasible GMM for Targeting Paper
 
-# Parameters:
-# 1~2. mean, variance of epsilon (utility shock)
-# 3.   sigma (coef of relative risk aversion = rho, sorry for the confusion)
-# 4.   alpha (fraction of people who are sophisticated)
-# 5~6. constant and coefficient for the lambda function (probability of
-       getting benefit given showing up)
-
-## Minimize Objective Function Locally From Many Starting Values
-#	Use matlab's built-in lsqnonlin function to optimize from a random set
-#	of initial values.
-
-## How are moments computed?
-#	For each obs, calculate showup_hat as the probability that eps>-gain
-#	(i.e. that gain+epsilon>0) This is just 1 - the cdf
-#	of epsilon evaluated at (-gain_i).
-"""
-function GMM_problem(delta_mom, danual, irate, eta_sd, passes, rng_seed,sample)
-
-    # load data as globals
-    small_sample_dummy = 0 # use regular data for estimation
-    load_data(sample,small_sample_dummy)
-
-    # consumption
-    # global lambda_con_true lambda_beta_true
-
-    # Initialize random number generator
-    rng(rng_seed)
-
-    # generate random sets of #passes possible initial values for each parameter
-    # "get benefit" function, lambda for the naive people
-    lambda_con_rand  = lambda_con_true*(0.8+0.4*rand(passes,1))
-    lambda_beta_rand = lambda_beta_true*(0.8+0.4*rand(passes,1)) # These two are parameters to match the initial value
-
-    # Currently imposing some function of random rho + noise
-    sig_eps_rand = 26805.*(0.8+0.4*rand(passes,1))
-    mu_eps_rand = -26215.*(0.8+0.4*rand(passes,1))
-
-    alpha_rand = 0.001+0.999*rand(passes,1)
-
-    # compute NPV delta (yearly)
-    irm = 1/irate
-    delta = danual*(1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
-
-
-    ## First Stage: Find params with identity weighting matrix
-    @show "First Stage Begin"
-
-    Fval_fs = zeros(passes,1)
-    Fitθ_fs = zeros(passes,5)
-    Showup_hat_fs     = zeros(size(consumption,1),passes)
-    Induced_lambda_fs = zeros(size(consumption,1),passes)
-    exitflag_fs       = zeros(passes,1)
-
-    for pass = 1:passes
-        # select initial parameters
-        θ_in = [   mu_eps_rand[pass,1],
-                        sig_eps_rand[pass,1],
-                        alpha_rand[pass,1],
-                        lambda_con_rand[pass,1],
-                        lambda_beta_rand[pass,1]]
-
-        # begin with identity weigthing matrix
-        W0 = eye(20)
-
-        [Fitθ_fs[pass,:], Fval_fs[pass], Showup_hat_fs[:,pass],
-        Induced_lambda_fs[:,pass], exitflag_fs[pass]] = run_GMM(θ_in, eta_sd, delta, W0, delta_mom)
-    end
-
-    minindex = argmin(Fval_fs)
-    θ_fs     = Fitθ_fs[minindex,:]
-
-    ## Second Stage: Find Params with Optimal Weighting Matrix
-    @show "Second Stage Begin"
-
-    # Calculate Optimal Weighting Matrix
-    # GMM_obj using W0 = identity returns the moment values
-
-    #θ_fs = [-67020	60897	0.22044	8.6504	-0.77535]
-     mu_eps  = θ_fs[1]
-     sig_eps = θ_fs[2]
-     alpha   = θ_fs[3]
-     lambda_con_belief  = θ_fs[4]
-     lambda_beta_belief = θ_fs[5]
-
-     [ showup_hat, induced_lambda ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta)
-
-     belief_lambda  = normcdf(lambda_con_belief+lambda_beta_belief*log(consumption))
-     true_lambda    = normcdf(lambda_con_true  +lambda_beta_true  *log(consumption))
-
-    moms = moments( showup_hat, true_lambda, belief_lambda, induced_lambda, delta_mom )
-
-N = size(consumption,1)
-    Winv = (moms'*moms)/N
-    W = inv(Winv)
-    Whalf = chol(W)'
-    norm((Whalf*Whalf')-W) #check decomposition worked.
-
-    #clear mu_eps sig_eps alpha lambda_con_belief lambda_beta_belief
-
-    Fval_ss           = zeros(passes,1)
-    Fitθ_ss           = zeros(passes,5)
-    Showup_hat_ss     = zeros(size(consumption,1),passes)
-    Induced_lambda_ss = zeros(size(consumption,1),passes)
-    exitflag_ss       = zeros(passes,1)
-
-    for pass = 1:passes
-        tic
-        # select initial parameters (the same ones as in first stage)
-        θ_in = [   mu_eps_rand(pass,1),
-                        sig_eps_rand(pass,1),
-                        alpha_rand(pass,1),
-                        lambda_con_rand(pass,1),
-                        lambda_beta_rand(pass,1)]
-
-        # use optimal weigthing matrix Whalf
-        [Fitθ_ss[pass,:], Fval_ss[pass], Showup_hat_ss[:,pass], Induced_lambda_ss[:,pass], exitflag_ss[pass]] =
-            run_GMM(  θ_in, eta_sd, delta, Whalf, delta_mom )
-
-        disp(['Second Stage pass # ' num2str(pass) ' took ' num2str(toc)])
-    end
-
-    [~, minindex] = min(Fval_ss)
-    ismax = (1:passes)==minindex
-    # θ_ss = Fitθ_ss(minindex,:)
-    #showup__hat = Showup_hat_ss[:,minindex)
-    #induced_lambda_ss = Induced_lambda_ss[:,minindex)
-
-    all_θ = [mu_eps_rand, Fitθ_fs[:,1], Fitθ_ss[:,1],
-                  sig_eps_rand,Fitθ_fs[:,2], Fitθ_ss[:,2],
-                  alpha_rand,  Fitθ_fs[:,3], Fitθ_ss[:,3],
-                  lambda_con_rand,  Fitθ_fs[:,4], Fitθ_ss[:,4],
-                  lambda_beta_rand, Fitθ_fs[:,5], Fitθ_ss[:,5],
-                  Fval_fs, Fval_ss, exitflag_fs, exitflag_ss, ismax']
-
-    disp('Second Stage Done')
-
-    return W, all_θ
-end
 
 # # Table 8. Estimated Parameter Values for the Model
 # run estimation_1.m
@@ -450,7 +378,7 @@ function estimation_1()
 
         [W, p_all] = GMM_problem(delta_mom, danual, irate, eta_sd, passes, rng_seed(it), boot_sample)
 
-        Fval_ss = p_all[:, 17)
+        Fval_ss = p_all[:, 17]
         [~, minindex] = min(Fval_ss)
         θ_boots[it,:] = p_all[minindex,:]
         θ_boots_all[ (it-1)*passes + (1:passes),:] = p_all
@@ -487,10 +415,17 @@ end
 # display(['Boostrap standard deviation for delta = 0.95 is ' num2str(boot_estimates_95_std,5)])
 #
 
+# # counterfactual showup hat used in Tables 9 and 10, and
+# # Online Appendix Table C.18.
+# run counterfactuals_1.m
+#     # Input:  MATLAB_Input.csv,
+#     #         MATLAB_Input_small_sample.csv
+#     # Output: MATLAB_showuphat_small_sample.csv
+#     #         MATLAB_showuphat.csv
 function counterfactuals_1()
-    %%%%%%%%%%%%%%%%%%
-    % fixed parameters
-    %%%%%%%%%%%%%%%%%%
+    ##################
+    # fixed parameters
+    ##################
 
     eta_sd = 0.275;
     irate = 1.22;
@@ -498,60 +433,60 @@ function counterfactuals_1()
     irm    = 1/irate;
     delta = danual*(1 + irm + irm^2 + irm^3 + irm^4 + irm^5);
 
-    %%%%%%%%%%%%%%%%%%
-    % Input parameters manually
-    % these are the baseline estimated parameters (danual = 1/irate)
-    %%%%%%%%%%%%%%%%%%
+    ##################
+    # Input parameters manually
+    # these are the baseline estimated parameters (danual = 1/irate)
+    ##################
 
-    mu_eps        = -79681;
-    sig_eps       = 59715;
+    μ_ϵ        = -79681;
+    σ_ϵ       = 59715;
     alpha         = 0.5049;
-    lambda_con_belief    = 8.0448;
-    lambda_beta_belief   = -0.71673;
+    λ_con_belief    = 8.0448;
+    λ_β_belief   = -0.71673;
 
-    % full sample
+    # full sample
     sample = [];
 
     for small_sample_dummy = 0:1
 
-        % load full data
+        # load full data
         load_data(sample,small_sample_dummy);
         global hhid quant_idx;
 
-        % Column 1 is showup, Column 2 is showuphat
-        [ showup_hat, ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+        # Column 1 is showup, Column 2 is showuphat
+        [ showup_hat, ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
         showup_table   = [table(hhid), table(quant_idx), table(showup_hat)];
 
-        % Column 3 Half Standard Deviation of epsilon
-        [ showup_hat_halfsd , ~ ] = showuphat(mu_eps, sig_eps/2, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+        # Column 3 Half Standard Deviation of epsilon
+        [ showup_hat_halfsd , ~ ] = showuphat(μ_ϵ, σ_ϵ/2, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
         showup_table   = [showup_table, table(showup_hat_halfsd)];
 
-        % Column 4 No epsilon variance
-        [ showup_hat_noeps , ~ ] = showuphat(mu_eps, sig_eps/1e10, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+        # Column 4 No epsilon variance
+        [ showup_hat_noeps , ~ ] = showuphat(μ_ϵ, σ_ϵ/1e10, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
         showup_table   = [showup_table, table(showup_hat_noeps)];
 
-        %%% replace travel cost by same travel cost
+        ### replace travel cost by same travel cost
         global totcost_smth_pc totcost_pc
-        totcost_pc = totcost_smth_pc; %#ok<NASGU>
+        totcost_pc = totcost_smth_pc; ##ok<NASGU>
 
-        % Column 5 no differential travel cost
-        [ showup_hat_smthc , ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+        # Column 5 no differential travel cost
+        [ showup_hat_smthc , ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
         showup_table   = [showup_table, table(showup_hat_smthc)];
 
-        %%% reload data, and assume constanta MU and LAMBDA
+        ### reload data, and assume constanta MU and λ
         load_data(sample,small_sample_dummy);
-        mean_mu = 0.0967742; % mean benefit receipt conditional on applying
+        mean_mu = 0.0967742; # mean benefit receipt conditional on applying
 
-        global mu_con_true mu_beta_true FE FE2;
-        lambda_con_belief_cml = norminv(mean_mu);
-        lambda_beta_belief_cml = 0;
-        mu_con_true = norminv(mean_mu);
-        mu_beta_true = 0;
+        global μ_con_true μ_β_true FE FE2;
+        λ_con_belief_cml = norminv(mean_mu);
+        λ_β_belief_cml = 0;
+        μ_con_true = norminv(mean_mu);
+        μ_β_true = 0;
         FE = FE*0;
         FE2 = FE2*0;
 
-        % Column 6 (constant mu AND lambda, update from the previous draft)
-        [ showup_hat_cml  , ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief_cml, lambda_beta_belief_cml, eta_sd, delta);
+        # Column 6 (constant mu AND λ, update from the previous draft)
+        [ showup_hat_cml  , ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief_cml, λ_β_belief_cml, eta_sd, delta);
         showup_table   = [showup_table, table(showup_hat_cml)];
 
 
@@ -562,41 +497,41 @@ function counterfactuals_1()
 
         else
 
-            % Column 7: 3 extra km
+            # Column 7: 3 extra km
             load_data(sample,small_sample_dummy);
             global totcost_pc totcost_3k_pc close
             totcost_pc = (1-close).*totcost_3k_pc + close.*totcost_pc;
-            [ showup_hat_km3 , ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+            [ showup_hat_km3 , ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
             showup_table   = [showup_table, table(showup_hat_km3)];
 
-            % Column 8: 6 extra km
+            # Column 8: 6 extra km
             load_data(sample,small_sample_dummy);
             global totcost_pc totcost_6k_pc close
             totcost_pc = (1-close).*totcost_6k_pc + close.*totcost_pc;
-            [ showup_hat_km6 , ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+            [ showup_hat_km6 , ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
             showup_table   = [showup_table, table(showup_hat_km6)];
 
-            % Column 9: 3x waiting time
+            # Column 9: 3x waiting time
             load_data(sample,small_sample_dummy);
             global totcost_pc hhsize close ave_waiting wagerate
             totcost_pc = totcost_pc + (1-close).*(2.*ave_waiting.*wagerate)./(hhsize.*60);
-            [ showup_hat_3aw , ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+            [ showup_hat_3aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
             showup_table   = [showup_table, table(showup_hat_3aw)];
 
-            % Column 10: 6x waiting time
+            # Column 10: 6x waiting time
             load_data(sample,small_sample_dummy);
             global totcost_pc hhsize close ave_waiting wagerate
             totcost_pc = totcost_pc + (1-close).*(5.*ave_waiting.*wagerate)./(hhsize.*60);
-            [ showup_hat_6aw , ~ ] = showuphat(mu_eps, sig_eps, alpha, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+            [ showup_hat_6aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, alpha, λ_con_belief, λ_β_belief, eta_sd, delta);
             showup_table   = [showup_table, table(showup_hat_6aw)];
 
 
-            % Column 11-12 alpha=0 (all-unsophisticated) and alpha=1 (all sophisticated)
+            # Column 11-12 alpha=0 (all-unsophisticated) and alpha=1 (all sophisticated)
             load_data(sample,small_sample_dummy);
-            [ showup_hat_alpha0 , ~ ] = showuphat(mu_eps, sig_eps, 0, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+            [ showup_hat_alpha0 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 0, λ_con_belief, λ_β_belief, eta_sd, delta);
             showup_table   = [showup_table, table(showup_hat_alpha0)];
 
-            [ showup_hat_alpha1 , ~ ] = showuphat(mu_eps, sig_eps, 1, lambda_con_belief, lambda_beta_belief, eta_sd, delta);
+            [ showup_hat_alpha1 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 1, λ_con_belief, λ_β_belief, eta_sd, delta);
             showup_table   = [showup_table, table(showup_hat_alpha1)];
 
             writetable(showup_table, [tempfolder 'MATLAB_showuphat.csv']);
@@ -604,10 +539,3 @@ function counterfactuals_1()
 
     end
 end
-# # counterfactual showup hat used in Tables 9 and 10, and
-# # Online Appendix Table C.18.
-# run counterfactuals_1.m
-#     # Input:  MATLAB_Input.csv,
-#     #         MATLAB_Input_small_sample.csv
-#     # Output: MATLAB_showuphat_small_sample.csv
-#     #         MATLAB_showuphat.csv
