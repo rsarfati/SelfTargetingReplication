@@ -60,16 +60,10 @@ function compute_moments(df0::D, showup::Vector{T} = Vector(df0.showup),
     end
 
     # 11-14 {Top, bottom tercile} x {observable, unobservable consumption}
-    #for i, Q in zip([[3,1],[3,3],[1,1],[1,3]])
-    TB = (df0.PMTSCORE_q .== 3) .& (df0.unobs_cons_q .== 1)
-    TT = (df0.PMTSCORE_q .== 3) .& (df0.unobs_cons_q .== 3)
-    BB = (df0.PMTSCORE_q .== 1) .& (df0.unobs_cons_q .== 1)
-    BT = (df0.PMTSCORE_q .== 1) .& (df0.unobs_cons_q .== 3)
-
-    moments[11] =  (sum(showup[TB]) - sum(showup_hat[TB])) / sum(TB)
-    moments[12] =  (sum(showup[TT]) - sum(showup_hat[TT])) / sum(TT)
-    moments[13] =  (sum(showup[BB]) - sum(showup_hat[BB])) / sum(BB)
-    moments[14] =  (sum(showup[BT]) - sum(showup_hat[BT])) / sum(BT)
+    for i, Q in zip([[3,1], [3,3], [1,1], [1,3]])
+        idx = (df0.PMTSCORE_q .== Q[1]) .& (df0.unobs_cons_q .== Q[3])
+        moments[10 + i] = (sum(showup[idx]) - sum(showup_hat[idx])) / sum(idx)
+    end
 
     # 15-16 Top and bottom distance quartiles
     T_D = (df0.distt_q .== 4)
