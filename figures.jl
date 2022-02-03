@@ -14,7 +14,7 @@ function figure_1(; labels::Dict{String,String} = labels, bins::Int64 = 0)
         categorical(string.(collect(zip(df.urban, df.kabgroup))), compress = true))
     all_groups = sort(unique(df.kaburban))
 
-    # TODO: Drop groups 2 and 4 due to insufficient variation
+    # Drop groups 2 and 4 due to insufficient variation
     df = df[(df.kaburban .!= all_groups[2]) .& (df.kaburban .!= all_groups[4]), :]
     deleteat!(all_groups, [2, 4])
 

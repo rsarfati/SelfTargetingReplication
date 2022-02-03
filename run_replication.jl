@@ -6,11 +6,9 @@
 # Base packages
 using CSV, DataFrames, Distributions, FileIO, ForwardDiff, LinearAlgebra
 using Optim, Printf, Plots, Statistics, StatFiles, StatsBase
-
 # Indulgent packages
 using FixedEffectModels, GLM, RegressionTables, Vcov
 using Binscatters, CategoricalArrays, CovarianceMatrices
-
 # Imports for shorthand
 import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
@@ -31,7 +29,7 @@ run(`cd $PATH`)
 # Define global constant(s)
 F64 = Float64
 
-# Prep labels for table and figure formatting
+# Prep labels + keyword shortcuts for table and figure formatting
 labels = Dict("logconsumption" => "Log Consumption",
               "showup" => "Showed Up",
               "PMTSCORE" => "Observable Consumption",
@@ -77,7 +75,7 @@ table_6()
 table_7()
 
 ### Run GMM estimation
-#include("gmm.jl")
+include("gmm.jl")
 
 # table_8()
 # table_9()
