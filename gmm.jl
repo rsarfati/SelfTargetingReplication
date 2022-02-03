@@ -18,13 +18,13 @@ function compute_quantiles(df::DataFrame; N_q = Dict([:consumption, :PMTSCORE, :
                                         length(quants)+1)) for i=1:length(x)]
 
     # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
-    !("logc"       in names(df)) && insertcols!(df, :log_c => log.(df.consumption))
+    !("log_c"      in names(df)) && insertcols!(df, :log_c => log.(df.consumption))
     !("unobs_cons" in names(df)) && insertcols!(df, :unobs_cons =>
                                     residuals(reg(df, @formula(log_c ~ PMTSCORE)), df))
 
     # Assign categorical IDs for quantiles
     for v in keys(N_q)
-        v_name = Symbol(string(v) * "_q_idx")
+        v_name = Symbol(string(v) * "_q")
         insertcols!(df, v_name => assign_q(df[:,v], quantile(df[:,v], quant(N_q[v]))))
     end
     return df
@@ -53,25 +53,28 @@ function compute_moments(df0::D, showup::Vector{T} = Vector(df0.showup),
 
     # 1-10 Far/close subtreatment x i=1:5th quintile of consumption
     for i=1:5
-        far_i   = (df0.consumption_q_idx .== i) .&   iszero.(df0.closesubtreatment)
-        close_i = (df0.consumption_q_idx .== i) .& .!iszero.(df0.closesubtreatment)
+        far_i   = (df0.consumption_q .== i) .&   iszero.(df0.close)
+        close_i = (df0.consumption_q .== i) .& .!iszero.(df0.close)
         moments[i]   = (sum(showup[far_i])   - sum(showup_hat[far_i]))   / sum(far_i)
         moments[5+i] = (sum(showup[close_i]) - sum(showup_hat[close_i])) / sum(close_i)
     end
 
     # 11-14 {Top, bottom tercile} x {observable, unobservable consumption}
-    TB = (df0.PMTSCORE_q_idx .== 3) .& (df0.unobs_cons_q_idx .== 1)
-    TT = (df0.PMTSCORE_q_idx .== 3) .& (df0.unobs_cons_q_idx .== 3)
-    BB = (df0.PMTSCORE_q_idx .== 1) .& (df0.unobs_cons_q_idx .== 1)
-    BT = (df0.PMTSCORE_q_idx .== 1) .& (df0.unobs_cons_q_idx .== 3)
+    #for i, Q in zip([[3,1],[3,3],[1,1],[1,3]])
+    TB = (df0.PMTSCORE_q .== 3) .& (df0.unobs_cons_q .== 1)
+    TT = (df0.PMTSCORE_q .== 3) .& (df0.unobs_cons_q .== 3)
+    BB = (df0.PMTSCORE_q .== 1) .& (df0.unobs_cons_q .== 1)
+    BT = (df0.PMTSCORE_q .== 1) .& (df0.unobs_cons_q .== 3)
+
     moments[11] =  (sum(showup[TB]) - sum(showup_hat[TB])) / sum(TB)
     moments[12] =  (sum(showup[TT]) - sum(showup_hat[TT])) / sum(TT)
     moments[13] =  (sum(showup[BB]) - sum(showup_hat[BB])) / sum(BB)
     moments[14] =  (sum(showup[BT]) - sum(showup_hat[BT])) / sum(BT)
 
     # 15-16 Top and bottom distance quartiles
-    T_D = (df0.distt_q_idx .== 4)
-    B_D = (df0.distt_q_idx .== 1)
+    T_D = (df0.distt_q .== 4)
+    B_D = (df0.distt_q .== 1)
+
     moments[15] =  (sum(showup[T_D]) - sum(showup_hat[T_D])) / sum(T_D)
     moments[16] =  (sum(showup[B_D]) - sum(showup_hat[B_D])) / sum(B_D)
 
@@ -149,7 +152,7 @@ function showuphat(df, t, η_sd, δ; N_grid = 100)
 
     sigma2 = sqrt(sum(((eye(N) - X / (X' * X) * X') * muinv_t) .^ 2) / (N - 2))
     coef      = 1 / sigma2 * (X' * X) \ X' * muinv_t # Divide by sigma to impose sd=1 for error
-    induced_λ = cdf.(Normal(),[ones(N,1), log.(consumption)] * coef)
+    induced_λ = cdf.(Normal(),[ones(N,1), df.log_c] * coef)
 
     return showup_hat, induced_λ
 end
@@ -173,7 +176,7 @@ Two Stage Feasible GMM for Targeting Paper
 #	(i.e. that gain+epsilon>0) This is just 1 - the cdf
 #	of epsilon evaluated at (-gain_i).
 """
-function GMM_problem(δ_mom, danual, irate, η_sd, passes, rng_seed, sample)
+function GMM_problem(df, δ_mom, danual, irate, η_sd, passes)
 
     df = compute_quantiles(df)
 
@@ -264,8 +267,8 @@ function GMM_problem(δ_mom, danual, irate, η_sd, passes, rng_seed, sample)
 
      showup_hat, induced_λ = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ)
 
-     belief_λ  = cdf(Normal(), λ_con_belief + λ_β_belief * log(consumption))
-     true_λ    = cdf(Normal(), λ_con_true   + λ_β_true   * log(consumption))
+     belief_λ  = cdf(Normal(), λ_con_belief + λ_β_belief * df.log_c)
+     true_λ    = cdf(Normal(), λ_con_true   + λ_β_true   * df.log_c)
 
     moms = moments( showup_hat, true_λ, belief_λ, induced_λ, δ_mom )
 
@@ -323,8 +326,8 @@ function GMM_obj(x, η_sd, δ, Whalf, δ_mom)
 
     showup_hat, induced_λ = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ)
 
-    belief_λ  = cdf(Normal(), λ_con_belief+λ_β_belief*log(consumption))
-    true_λ    = cdf(Normal(), λ_con_true  +λ_β_true  *log(consumption))
+    belief_λ  = cdf(Normal(), λ_con_belief+λ_β_belief*df.log_c)
+    true_λ    = cdf(Normal(), λ_con_true  +λ_β_true  *df.log_c)
 
     moms = moments( showup_hat, true_λ, belief_λ, induced_λ, δ_mom )
 
@@ -350,42 +353,36 @@ end
 
 
 
-# # Table 8. Estimated Parameter Values for the Model
-# run estimation_1.m
-#     # Input:  MATLAB_Input.csv
-#     # Output: MATLAB_Estimates_main_d**.csv
-#     #    ** corresponds to the value of the annual discount factor:
-#             d=0.82 = 1/irate, d=0.50 or d=0.95
-function estimation_1()
-    irate  = 1.22
-    η_sd   = 0.275
-    δ_mom  = 0.0
-    passes = 100
+"""
+Table 8. Estimated Parameter Values for the Model // estimation_1.m
+Input:  MATLAB_Input.csv
+Output: MATLAB_Estimates_main_d**.csv
+** corresponds to the value of the annual discount factor:
+   d=0.82 = 1/irate, d=0.50 or d=0.95
+"""
+function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, passes = 100)
+    df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
+    insertcols!(df, :log_c => log.(df.consumption))
+    rename!(df, [:closesubtreatment => :close])
+
+    N  = size(df, 1) # No. of households
 
     # Full sample
     sample = Vector{F64}()
 
-    for danual in [1/irate, 0.5, 0.95]
-        _, p_all = GMM_problem(δ_mom, danual, irate, η_sd, passes, sample)
-        temp = round(danuals*100)
-        # Write p_all to CSV.
+    for d_annual in [1/irate, 0.5, 0.95]
+        _, p_all = GMM_problem(df, δ_mom, d_annual, irate, η_sd, passes)
+        temp     = round(d_annual*100)
         CSV.write("output/MATLAB_Estimates_main_d$temp.csv", p_all)
     end
 
-    # # Standard errors
-    # #run bootstrapping.m
-    #     # run three times, changing line 19: danual  = 1/irate danual = 0.50 and danual = 0.95
-    #     # Input:  MATLAB_Input.csv
-    #     # Output: bootstrap_**\bootstrap_[something]_d**.csv files
-
-
+    # Standard errors // run bootstrapping.m
+    # Input:  MATLAB_Input.csv
+    # Output: bootstrap_**\bootstrap_[something]_d**.csv files
     danual = 1/irate # alternatives: danual = 0.50 and = 0.95.
-    N = size(consumption, 1)
     N_m    = 20  # number of moments
     n_boot = 100 # Number of bootstrap iterations
     passes = 50  # Number of passes (initial conditions) per iteration
-
-    rng_seed = 10000 * rand(n_boot, 1)
 
     # store bootstrap subsample, estimated parameters, weighting matrices,
     # and all passes for each iteration
@@ -396,16 +393,16 @@ function estimation_1()
 
     for it=1:n_boot
         # Randomly draw households (with replacement) for bootstrap
-        boot_sample = sample(1:N, N, true)
+        boot_sample        = sample(1:N, N, true)
         boot_samples[it,:] = boot_sample # Save sample
 
-        [W, p_all] = GMM_problem(δ_mom, danual, irate, η_sd, passes, rng_seed(it), boot_sample)
+        W, p_all = GMM_problem(δ_mom, danual, irate, η_sd, passes, boot_sample)
 
         Fval_ss       = p_all[:, 17]
         minindex      = argmin(Fval_ss)
         θ_boots[it,:] = p_all[minindex,:]
-        θ_boots_all[ (it-1)*passes + (1:passes),:] = p_all
-        weight_matrix[ (it-1)*N_m + (1:N_m),:] = W
+        θ_boots_all[   (it-1) * passes + (1:passes),:] = p_all
+        weight_matrix[ (it-1) * N_m + (1:N_m),:] = W
 
         @show "Bootstrap iteration: $i. Last iteration took $i sec."
 
