@@ -18,7 +18,6 @@ function compute_quantiles(df::DataFrame; N_q = Dict([:consumption, :PMTSCORE, :
                                         length(quants)+1)) for i=1:length(x)]
 
     # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
-    !("log_c"      in names(df)) && insertcols!(df, :log_c => log.(df.consumption))
     !("unobs_cons" in names(df)) && insertcols!(df, :unobs_cons =>
                                     residuals(reg(df, @formula(log_c ~ PMTSCORE)), df))
 
@@ -110,41 +109,57 @@ function showuphat(df, t, η_sd, δ; N_grid = 100)
     N   = length(df.consumption)
 
     # Prepare mesh grid
-    eta         = linspace(lb, ub, N_grid)'
-    ETA         = η * ones(1,λ)
-    Consumption = ones(N_grid,1) * (df.consumption')
-    Pmtscore    = ones(N_grid,1) * (df.pmtscore')
-    Totcost_pc  = ones(N_grid,1) * (df.totcost_pc')
-    Benefit     = ones(N_grid,1) * (df.benefit')
-    FFE2        = ones(N_grid,1) * (df.FE2')
-    FFE         = ones(N_grid,1) * (df.FE')
-    Moneycost   = ones(N_grid,1) * (df.moneycost')
+    eta         = LinSpace(lb, ub, N_grid)
+    ETA         = repeat(η, 1, N)
+    Consumption = repeat(df.consumption', N_grid)
+    Pmtscore    = repeat(df.pmtscore', N_grid)
+    Totcost_pc  = repeat(df.totcost_pc', N_grid)
+    Benefit     = repeat(df.benefit', N_grid)
+    FFE2        = repeat(df.FE2', N_grid)
+    FFE         = repeat(df.FE', N_grid)
+    Moneycost   = repeat(df.moneycost', N_grid)
 
     # Calculate integrand
     # Present Utility (Cost function is adjusted because "totalcost" given is based on noisy consumption measure.)
-    relu_2day = (Consumption .* exp.(-ETA) - Totcost_pc .* exp(-ETA) + (1 - 1 .* exp(-ETA)) .* Moneycost) - (Consumption .* exp.(-ETA))
+    relu_2day = (Consumption .* exp.(-ETA) - Totcost_pc .* exp.(-ETA) + (1 .- 1 .* exp.(-ETA)) .* Moneycost) - (Consumption .* exp.(-ETA))
 
     # Future Utility: note that cdf(Normal(),) in the middle is mu function
-    relu_2mor = (Consumption .* exp(-ETA) + Benefit) - (Consumption .* exp.(-ETA))
-    Mu        = cdf(Normal(), μ_con_true + FFE2 + μ_β_true * (Pmtscore - ETA))
+    relu_2mor = (Consumption .* exp(-ETA) .+ Benefit) - (Consumption .* exp.(-ETA))
+    Mu        = cdf(Normal(), μ_con_true .+ FFE2 .+ μ_β_true * (Pmtscore - ETA))
     Lambda    = cdf(Normal(), λ_con_belief+λ_β_belief * (log.(Consumption) - ETA))
 
-    prob_s = (1 - 1 ./ (1 + exp(β .* (relu_2day + 12 .* δ .* Mu     .* relu_2mor) + αa)))
-    prob_u = (1 - 1 ./ (1 + exp(β .* (relu_2day + 12 .* δ .* Lambda .* relu_2mor) + αa)))
+    prob_s = (1 .- 1 ./ (1 .+ exp(β .* (relu_2day .+ 12 .* δ .* Mu     .* relu_2mor) .+ αa)))
+    prob_u = (1 .- 1 ./ (1 .+ exp(β .* (relu_2day .+ 12 .* δ .* Lambda .* relu_2mor) .+ αa)))
 
     integ = (α * prob_s + (1 - α) * prob_u ) .* pdf.(Normal(0, η_sd), ETA)
 
-    showup_hat = real(trapz(eta,integ)')
+    function util(η::F64)
+        relu_2day = (Consumption .* exp.(-η) - Totcost_pc .* exp.(-η) + (1 .- 1 .* exp.(-η)) .* Moneycost) - (Consumption .* exp.(-η))
+
+        # Future Utility: note that cdf(Normal(),) in the middle is mu function
+        relu_2mor = (Consumption .* exp(-η) .+ Benefit) - (Consumption .* exp.(-η))
+        Mu        = cdf(Normal(), μ_con_true .+ FFE2 .+ μ_β_true * (Pmtscore - η))
+        Lambda    = cdf(Normal(), λ_con_belief+λ_β_belief * (log.(Consumption) - η))
+
+        prob_s = (1 .- 1 ./ (1 .+ exp(β .* (relu_2day .+ 12 .* δ .* Mu     .* relu_2mor) .+ αa)))
+        prob_u = (1 .- 1 ./ (1 .+ exp(β .* (relu_2day .+ 12 .* δ .* Lambda .* relu_2mor) .+ αa)))
+
+        return (α * prob_s + (1 - α) * prob_u) .* pdf.(Normal(0, η_sd), η)
+    end
+
+    showup_hat, err = quadgk(util, lb, ub, rtol=1e-8)
+
+    #showup_hat = real(trapz(eta,integ)')
 
     # Rather than running probit, apply WLS.
     # Calculate inverse of mu Phi(-1)(mu) where Phi is standard normal CDF
     muinv     = μ_con_true + FE2 + μ_β_true * df.pmtscore
-    muinv_t   = sqrt(showup_hat) .* muinv    # Conversion for the frequency weight
-    const_t   = sqrt(showup_hat)             # Conversion for the weight
-    logcons_t = sqrt(showup_hat) .* df.log_c # Conversion for the weight
+    muinv_t   = sqrt.(showup_hat) .* muinv    # Conversion for the frequency weight
+    const_t   = sqrt.(showup_hat)             # Conversion for the weight
+    logcons_t = sqrt.(showup_hat) .* df.log_c # Conversion for the weight
     X = [const_t, logcons_t]
 
-    sigma2 = sqrt(sum(((eye(N) - X / (X' * X) * X') * muinv_t) .^ 2) / (N - 2))
+    sigma2 = sqrt.(sum.(((eye(N) - X / (X' * X) * X') * muinv_t) .^ 2) / (N - 2))
     coef      = 1 / sigma2 * (X' * X) \ X' * muinv_t # Divide by sigma to impose sd=1 for error
     induced_λ = cdf.(Normal(),[ones(N,1), df.log_c] * coef)
 
@@ -156,7 +171,7 @@ Two Stage Feasible GMM for Targeting Paper
 
 # Parameters:
 # 1~2. mean, variance of epsilon (utility shock)
-# 3.   sigma (coef of relative risk aversion = rho, sorry for the confusion)
+# 3.   sigma (coef of relative risk aversion = rho)
 # 4.   α (fraction of people who are sophisticated)
 # 5~6. constant and coefficient for the λ function (probability of
        getting benefit given showing up)
@@ -170,24 +185,18 @@ Two Stage Feasible GMM for Targeting Paper
 #	(i.e. that gain+epsilon>0) This is just 1 - the cdf
 #	of epsilon evaluated at (-gain_i).
 """
-function GMM_problem(df, δ_mom, danual, irate, η_sd, passes)
+function GMM_problem(df, δ_mom, danual, irate, η_sd, N_init)
+    # Load + clean data
+    df = CSV.read("input/MATLAB_.csv", DataFrame, header = true)
+    insertcols!(df, :log_c => log.(df.consumption))
+
+    N  = size(df, 1) # No. of households
+    N_m = 20 # No. of moment conditions
 
     df = compute_quantiles(df)
 
     λ_con_true = df.reg_nofe_const[1]
     λ_β_true   = df.reg_nofe_logcon[1]
-
-    # generate random sets of # passes possible initial values for each parameter
-    # "get benefit" function, λ for the naive people
-    # These two are parameters to match the initial value
-    λ_con_rand = λ_con_true  * (0.8 + 0.4 * rand(passes,1))
-    λ_β_rand   = λ_β_true    * (0.8 + 0.4 * rand(passes,1))
-
-    # Currently imposing some function of random rho + noise
-    σ_ϵ_rand =  26805 .* (0.8 .+ 0.4 .* rand(passes, 1))
-    μ_ϵ_rand = -26215 .* (0.8 .+ 0.4 .* rand(passes, 1))
-
-    α_rand = 0.001 + 0.999*rand(passes,1)
 
     # compute NPV δ (yearly)
     irm = 1 / irate
@@ -197,42 +206,30 @@ function GMM_problem(df, δ_mom, danual, irate, η_sd, passes)
     Difference between empirical and estimated moments.
     """
     function g(t::Vector{T}, df1::D) where {T<:Float64, D<:Union{DataFrame, DataFrameRow}}
-        # No. Households
-        N = size(df1, 1)
-        # Logit CDF closure
-        F(x::T) where T<:Float64 = inv(1 + exp(-(x-t[1])/t[2]))
-        # Define probability of showing up for each i
-        P_showup = 1 .- F.(h)
-
         showup_hat, induced_λ = showuphat(t, η_sd, δ)
-
-        true_λ    = cdf(Normal(), λ_con_true   + λ_β_true   * df1.log_c)
-        belief_λ  = cdf(Normal(), λ_con_belief + λ_β_belief * df1.log_c)
-
+        true_λ    = cdf(Normal(), λ_con_true   .+ λ_β_true   .* df1.log_c)
+        belief_λ  = cdf(Normal(), λ_con_belief .+ λ_β_belief .* df1.log_c)
         return compute_moments(df0, showup, showup_hat, true_λ, belief_λ, induced_λ)
     end
 
-    # GMM: First Step
-    t1 = minimizer(optimize(x -> g(x, df0)' * A * g(x, df0), t0))
-    # GMM: Second step
-    Om = mean([g(t1, df0[i,:]) * g(t1, df0[i,:])' for i=1:N_h])
-    # Return final theta
-    return minimizer(optimize(x -> g(x, df0)' * inv(Om) * g(x, df0), t1))
+    ### GMM: First Step
 
+    # generate random sets of possible initial values for each parameter
+    # "get benefit" function, λ for the naive people
+    λ_con_rand = λ_con_true  * (0.8 + 0.4 * rand(N_init))
+    λ_β_rand   = λ_β_true    * (0.8 + 0.4 * rand(N_init))
 
+    # Currently imposing some function of random rho + noise
+    σ_ϵ_rand =  26805 .* (0.8 .+ 0.4 .* rand(N_init))
+    μ_ϵ_rand = -26215 .* (0.8 .+ 0.4 .* rand(N_init))
+    α_rand   = 0.001 + 0.999*rand(N_init)
+    Fval_fs       = zeros(N_init)
+    Fitθ_fs       = zeros(N_init, 5)
+    Showup_hat_fs = zeros(N, N_init)
+    Induced_λ_fs  = zeros(N, N_init)
+    exitflag_fs   = zeros(N_init)
 
-
-
-    ## First Stage: Find params with identity weighting matrix
-    @show "First Stage Begin"
-
-    Fval_fs       = zeros(passes,1)
-    Fitθ_fs       = zeros(passes,5)
-    Showup_hat_fs = zeros(size(consumption,1),passes)
-    Induced_λ_fs  = zeros(size(consumption,1),passes)
-    exitflag_fs   = zeros(passes,1)
-
-    for p = 1:passes
+    for p = 1:N_init
         # select initial parameters
         θ_in = [μ_ϵ_rand[p,1],
                 σ_ϵ_rand[p,1],
@@ -249,6 +246,20 @@ function GMM_problem(df, δ_mom, danual, irate, η_sd, passes)
 
     minindex = argmin(Fval_fs)
     θ_fs     = Fitθ_fs[minindex,:]
+    t1       = minimizer(optimize(x -> g(x, df0)' * A * g(x, df0), t0))
+    # GMM: Second step
+    Om = mean([g(t1, df0[i,:]) * g(t1, df0[i,:])' for i=1:N_h])
+    # Return final theta
+    return minimizer(optimize(x -> g(x, df0)' * inv(Om) * g(x, df0), t1))
+
+
+
+
+
+    ## First Stage: Find params with identity weighting matrix
+    @show "First Stage Begin"
+
+
 
     ## Second Stage: Find Params with Optimal Weighting Matrix
     @show "Second Stage Begin"
@@ -272,13 +283,13 @@ function GMM_problem(df, δ_mom, danual, irate, η_sd, passes)
     Whalf = chol(W)'
     norm((Whalf * Whalf') - W) #check decomposition worked.
 
-    Fval_ss       = zeros(passes,1)
-    Fitθ_ss       = zeros(passes,5)
-    Showup_hat_ss = zeros(size(consumption,1),passes)
-    Induced_λ_ss  = zeros(size(consumption,1),passes)
-    exitflag_ss   = zeros(passes,1)
+    Fval_ss       = zeros(N_init,1)
+    Fitθ_ss       = zeros(N_init,5)
+    Showup_hat_ss = zeros(size(consumption,1),N_init)
+    Induced_λ_ss  = zeros(size(consumption,1),N_init)
+    exitflag_ss   = zeros(N_init,1)
 
-    for p = 1:passes
+    for p = 1:N_init
         tic
         # select initial parameters (the same ones as in first stage)
         θ_in = [μ_ϵ_rand[p,1],
@@ -293,7 +304,7 @@ function GMM_problem(df, δ_mom, danual, irate, η_sd, passes)
     end
 
     minindex = argmin(Fval_ss)
-    ismax = (1:passes) .== minindex
+    ismax = (1:N_init) .== minindex
 
     all_θ = [μ_ϵ_rand, Fitθ_fs[:,1], Fitθ_ss[:,1],
               σ_ϵ_rand,Fitθ_fs[:,2], Fitθ_ss[:,2],
@@ -354,7 +365,7 @@ Output: MATLAB_Estimates_main_d**.csv
 ** corresponds to the value of the annual discount factor:
    d=0.82 = 1/irate, d=0.50 or d=0.95
 """
-function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, passes = 100)
+function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_init = 100)
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     insertcols!(df, :log_c => log.(df.consumption))
     rename!(df, [:closesubtreatment => :close])
@@ -365,7 +376,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, passes = 100)
     sample = Vector{F64}()
 
     for d_annual in [1/irate, 0.5, 0.95]
-        _, p_all = GMM_problem(df, δ_mom, d_annual, irate, η_sd, passes)
+        _, p_all = GMM_problem(df, δ_mom, d_annual, irate, η_sd, N_init)
         temp     = round(d_annual*100)
         CSV.write("output/MATLAB_Estimates_main_d$temp.csv", p_all)
     end
@@ -376,26 +387,26 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, passes = 100)
     danual = 1/irate # alternatives: danual = 0.50 and = 0.95.
     N_m    = 20  # number of moments
     n_boot = 100 # Number of bootstrap iterations
-    passes = 50  # Number of passes (initial conditions) per iteration
+    N_init = 50  # Number of N_init (initial conditions) per iteration
 
     # store bootstrap subsample, estimated parameters, weighting matrices,
-    # and all passes for each iteration
+    # and all N_init for each iteration
     boot_samples  = zeros(n_boot, N)
     θ_boots       = zeros(n_boot, N_m)
     weight_matrix = zeros(n_boot * N_m, N_m)
-    θ_boots_all   = zeros(n_boot * passes, N_m)
+    θ_boots_all   = zeros(n_boot * N_init, N_m)
 
     for it=1:n_boot
         # Randomly draw households (with replacement) for bootstrap
         boot_sample        = sample(1:N, N, true)
         boot_samples[it,:] = boot_sample # Save sample
 
-        W, p_all = GMM_problem(δ_mom, danual, irate, η_sd, passes, boot_sample)
+        W, p_all = GMM_problem(δ_mom, danual, irate, η_sd, N_init, boot_sample)
 
         Fval_ss       = p_all[:, 17]
         minindex      = argmin(Fval_ss)
         θ_boots[it,:] = p_all[minindex,:]
-        θ_boots_all[   (it-1) * passes + (1:passes),:] = p_all
+        θ_boots_all[   (it-1) * N_init + (1:N_init),:] = p_all
         weight_matrix[ (it-1) * N_m + (1:N_m),:] = W
 
         @show "Bootstrap iteration: $i. Last iteration took $i sec."
@@ -403,7 +414,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, passes = 100)
         # write output so far (overwrite)
         temp = round(danual*100)
         CSV.write("output/bootstrap_$(temp)_estimates.csv",     θ_boots)
-        CSV.write("output/bootstrap_$(temp)_allpasses.csv",     θ_boots_all)
+        CSV.write("output/bootstrap_$(temp)_allN_init.csv",     θ_boots_all)
         CSV.write("output/bootstrap_$(temp)_samples.csv",       boot_samples)
         CSV.write("output/bootstrap_$(temp)_weight_matrix.csv", weight_matrix)
     end
