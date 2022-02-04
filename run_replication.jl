@@ -7,13 +7,13 @@
 using CSV, DataFrames, Distributions, FileIO, ForwardDiff, LinearAlgebra
 using Optim, Printf, Plots, Statistics, StatFiles, StatsBase
 # Indulgent packages
-using FixedEffectModels, GLM, RegressionTables, Vcov
+using FixedEffectModels, GLM, RegressionTables, QuadGK, Vcov
 using Binscatters, CategoricalArrays, CovarianceMatrices
 # Imports for shorthand
 import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
 
-# User TODO: Specify path to working directory!
+# TODO: Specify path to working directory!
 PATH = "/Users/henrygenighx/Desktop/14.771 - Dev/replication"
 
 # Build output folders if don't already exist
