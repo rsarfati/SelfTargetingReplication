@@ -184,33 +184,19 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
     ub1 = [ 200000, 200000, 0.999, 20,  1]
     # generate random sets of possible initial values for each parameter
     # "get benefit" function, λ for the naive people
-    λ_con_rand = λ_con_true  * (0.8 .+ 0.4 * rand(N_init))
-    λ_β_rand   = λ_β_true    * (0.8 .+ 0.4 * rand(N_init))
+    λ_con_rand = λ_con_true  * (0.8 .+ 0.4 * rand())
+    λ_β_rand   = λ_β_true    * (0.8 .+ 0.4 * rand())
 
     # Currently imposing some function of random rho + noise
-    σ_ϵ_rand =  26805 .* (0.8 .+ 0.4 .* rand(N_init))
-    μ_ϵ_rand = -26215 .* (0.8 .+ 0.4 .* rand(N_init))
-    α_rand   = 0.001 .+ 0.999 * rand(N_init)
+    σ_ϵ_rand =  26805 .* (0.8 .+ 0.4 .* rand())
+    μ_ϵ_rand = -26215 .* (0.8 .+ 0.4 .* rand())
+    α_rand   = 0.001 .+ 0.999 * rand()
 
     # Select initial parameters
-    F_min = Inf
-    t1 = zeros(N_p)
-
-    ## First Stage: Find params with identity weighting matrix
-    println("First Stage Begin")
-
     # GMM First step: begin with identity weighting matrix
     W0 = Matrix{Float64}(I, N_m, N_m)
-    for p = 1:N_init
-        @show p
-        t0 = [μ_ϵ_rand[p], σ_ϵ_rand[p], α_rand[p], λ_con_rand[p], λ_β_rand[p]]
-        o = optimize(x -> g(x, df)' * W0 * g(x, df), t0)
-        F_cur = minimum(o)
-        if F_cur < F_min
-            t1 = minimizer(o)
-        end
-    end
-    @show t1
+    t0 = [μ_ϵ_rand, σ_ϵ_rand, α_rand, λ_con_rand, λ_β_rand]
+    t1 = minimizer(optimize(x -> g(x, df)' * W0 * g(x, df), t0, lower=lb1, upper=ub1))
     # GMM: Second stage
     Om = mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N])
     # Return final theta
@@ -233,31 +219,11 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
 
     moms = moments( showup_hat, true_λ, belief_λ, induced_λ, δ_mom )
 
-    N = size(consumption,1)
-    Winv = (moms' * moms) / N
-    W = inv(Winv)
+    N     = size(consumption,1)
+    Winv  = (moms' * moms) / N
+    W     = inv(Winv)
     Whalf = chol(W)'
-    norm((Whalf * Whalf') - W) #check decomposition worked.
-
-    Fval_ss       = zeros(N_init,1)
-    Fitθ_ss       = zeros(N_init,5)
-    Showup_hat_ss = zeros(size(consumption,1),N_init)
-    Induced_λ_ss  = zeros(size(consumption,1),N_init)
-    exitflag_ss   = zeros(N_init,1)
-
-    for p = 1:N_init
-        tic
-        # select initial parameters (the same ones as in first stage)
-        θ_in = [μ_ϵ_rand[p,1],
-                σ_ϵ_rand[p,1],
-                α_rand[p,1],
-                λ_con_rand[p,1],
-                λ_β_rand[p,1]]
-
-        # use optimal weigthing matrix Whalf
-        Fitθ_ss[p,:], Fval_ss[p], Showup_hat_ss[:,p], Induced_λ_ss[:,p], exitflag_ss[p] =
-            run_GMM(  θ_in, η_sd, δ, Whalf, δ_mom )
-    end
+    norm((Whalf * Whalf') - W) #check decomposition worked
 
     minindex = argmin(Fval_ss)
     ismax = (1:N_init) .== minindex
@@ -271,46 +237,6 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
 
     return W, all_θ
 end
-
-
-
-# function GMM_obj(x, η_sd, δ, Whalf, δ_mom)
-#     #GMM_obj compute the product between the moment values (at given parameter
-#     #values) and Cholsky half of the weighting matrix
-#     global λ_con_true λ_β_true
-#
-#     μ_ϵ  = x(1)
-#     σ_ϵ = x(2)
-#     α   = x(3)
-#     λ_con_belief  = x(4)
-#     λ_β_belief = x(5)
-#
-#     showup_hat, induced_λ = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ)
-#
-#     belief_λ  = cdf(Normal(), λ_con_belief+λ_β_belief*df.log_c)
-#     true_λ    = cdf(Normal(), λ_con_true  +λ_β_true  *df.log_c)
-#
-#     moms = moments( showup_hat, true_λ, belief_λ, induced_λ, δ_mom )
-#
-#     return mean(moms,1) * Whalf
-# end
-
-
-# function run_GMM(params_in, η_sd, δ, Whalf, δ_mom)
-#
-#     # lower and upper bounds for all the parameters
-#     lb1 = [-200000,     0,  0.001,  0, -2]
-#     ub1 = [ 200000, 200000, 0.999, 20,  1]
-#
-#     # run lsqnonlin
-#     fitparams,fval, _, exitflag =
-#         lsqnonlin(@(x)GMM_obj(x, η_sd, δ, Whalf, δ_mom), params_in, lb1, ub1, options2)
-#
-#     # return showup_hat_return
-#     showuphat_return, induced_λ_return = showuphat(fitparams[1:5], η_sd, δ)
-#     return fitparams, fval, showuphat_return, induced_λ_return, exitflag
-#
-# end
 
 """
 Table 8. Estimated Parameter Values for the Model // estimation_1.m
@@ -327,8 +253,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0)
 
     # Run three estimations with varying discount factors
     for d_annual in [1/irate, 0.5, 0.95]
-        _, p_all = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
-                               η_sd = η_sd)
+        _, p_all = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate, η_sd = η_sd)
         temp     = round(d_annual*100)
         @show p_all
         CSV.write("output/MATLAB_Estimates_main_d$temp.csv", p_all)
