@@ -1,17 +1,16 @@
 """
 ```
-compute_quantiles(df::DataFrame;
-                  N_q = Dict([:consumption, :pmtscore, :unobs_cons, :distt] .=>
-                             [5, 3, 3, 4]]))
+compute_quantiles(df::DataFrame; N_q = Dict([:consumption, :pmtscore,
+           :unobs_cons, :distt] .=> [5, 3, 3, 4]]))
 ```
 Computes quantiles of variables in inputted dictionary, and puts the associated
-categorical labels into dataframe for series. Default inputs are observed consumption,
+categorical labels into dataframe for series. Default inputs are obs. consumption,
 PMT, unobs. consumption (w), distance
 
 Corresponds to `load_data.m` file in replication code.
 """
-function compute_quantiles(df::Union{DataFrame, DataFrameRow}; N_q = Dict([:consumption, :pmtscore, :unobs_cons,
-                                                      :distt] .=> [5, 3, 3, 4]))
+function compute_quantiles(df::Union{DataFrame, DataFrameRow}; N_q = Dict([:consumption, :pmtscore,
+                                       :unobs_cons, :distt] .=> [5, 3, 3, 4]))
     # Helper functions
     quant(N::Int64)     = [n/N for n=1:N-1]
     assign_q(x, quants) = [minimum(vcat(findall(>=(x[i]), quants),
@@ -19,19 +18,19 @@ function compute_quantiles(df::Union{DataFrame, DataFrameRow}; N_q = Dict([:cons
 
     # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
     !("unobs_cons" in names(df)) && insertcols!(df, :unobs_cons =>
-                                    residuals(reg(df, @formula(log_c ~ pmtscore)), df))
+                            residuals(reg(df, @formula(log_c ~ pmtscore)), df))
 
     # Assign categorical IDs for quantiles
     for v in keys(N_q)
-        v_name = Symbol(string(v) * "_q")
-        insertcols!(df, v_name => assign_q(df[:,v], quantile(df[:,v], quant(N_q[v]))))
+        v_n = Symbol(string(v) * "_q")
+        insertcols!(df, v_n => assign_q(df[:,v], quantile(df[:,v], quant(N_q[v]))))
     end
     return df
 end
 
 """
 ```
-compute_moments(df0::D, showup::Vector{T}) where {T<:Number,D<:DataFrame}
+compute_moments(df0::D, showup::Vector{T}) where {T<:Number,D<:Union{DataFrame, DataFrameRow}}
 ```
 Moments:
 1-10.  mean showup rates in (measured) consumption quintiles in far and close
@@ -53,29 +52,29 @@ function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, belief
     for i=1:5
         far_i   = (df0.consumption_q .== i) .&   iszero.(df0.close)
         close_i = (df0.consumption_q .== i) .& .!iszero.(df0.close)
-        moments[i]   = (sum(showup[far_i])   - sum(showup_hat[far_i]))   / sum(far_i)
-        moments[5+i] = (sum(showup[close_i]) - sum(showup_hat[close_i])) / sum(close_i)
+        moments[i]   = (sum(showup .* far_i)   - sum(showup_hat .* far_i))  /sum(far_i)
+        moments[5+i] = (sum(showup .* close_i) - sum(showup_hat .* close_i))/sum(close_i)
     end
 
     # 11-14 {Top, bottom tercile} x {observable, unobservable consumption}
     for (i, Q) in enumerate([[3,1], [3,3], [1,1], [1,3]])
         idx = (df0.pmtscore_q .== Q[1]) .& (df0.unobs_cons_q .== Q[2])
-        moments[10 + i] = (sum(showup[idx]) - sum(showup_hat[idx])) / sum(idx)
+        moments[10 + i] = (sum(showup .* idx) - sum(showup_hat .* idx)) / sum(idx)
     end
 
     # 15-16 Top and bottom distance quartiles
     T_D = (df0.distt_q .== 4)
     B_D = (df0.distt_q .== 1)
 
-    moments[15] =  (sum(showup[T_D]) - sum(showup_hat[T_D])) / sum(T_D)
-    moments[16] =  (sum(showup[B_D]) - sum(showup_hat[B_D])) / sum(B_D)
+    moments[15] =  (sum(showup .* T_D) - sum(showup_hat .* T_D)) / sum(T_D)
+    moments[16] =  (sum(showup .* B_D) - sum(showup_hat .* B_D)) / sum(B_D)
 
     # 17-20 Mean λ function moments
     N_show   = sum(showup)
-    moments[17] = sum((belief_λ .- df0.getbenefit) .* showup) / N_show
+    moments[17] = sum((belief_λ .- df0.getbenefit) .* showup)     / N_show
     moments[18] = sum((belief_λ .- df0.getbenefit) .*
                         (df0.log_c .- mean(df0.log_c)) .* showup) / N_show
-    moments[19] = sum((induced_λ .- df0.getbenefit) .* showup) / N_show
+    moments[19] = sum((induced_λ .- df0.getbenefit) .* showup)    / N_show
     moments[20] = sum((induced_λ .- df0.getbenefit) .*
                         (df0.log_c .- mean(df0.log_c)) .* showup) / N_show
 
@@ -103,9 +102,11 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     lb = -η_sd*4
     ub = -lb
     N  = length(df.consumption)
+    @show N
 
     function util(η::F64)
-        # Present Utility (Cost function adjusted because "totalcost" given is based on noisy consumption measure.)
+        # Present Utility (Cost function adjusted bc "totalcost" is based on
+        # noisy consumption measure.)
         relu_2day = (df.consumption .* exp.(-η) - df.totcost_pc .* exp.(-η) +
                     (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.consumption .* exp.(-η))
         # Future Utility: note that cdf(Normal(),) in the middle is mu function
@@ -124,7 +125,7 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     for η_i in range(lb, stop=ub, length=N_grid)
         showup_hat += 2*util(η_i)
     end
-    showup_hat *= 0.5*(ub-lb)/100
+    showup_hat *= 0.5 * (ub-lb) / 100
     #showup_hat, err = quadgk(util, lb, ub, rtol=1e-4)
 
     # Rather than running probit, apply WLS.
@@ -134,9 +135,9 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     muinv_t   = const_t .* muinv    # Conversion for the frequency weight
     logcons_t = const_t .* df.log_c # Conversion for the weight
     X         = hcat(const_t, logcons_t)
-
     sigma2    = sqrt(sum(((Matrix{F64}(I, N, N) - X / (X' * X) * X') * muinv_t) .^ 2) / (N - 2))
     coef      = 1 / sigma2 * (X' * X) \ X' * muinv_t # Divide by sigma to impose sd=1 for error
+
     induced_λ = cdf.(Normal(), hcat(ones(N), df.log_c) * coef)
 
     return showup_hat, induced_λ
@@ -161,7 +162,7 @@ Two Stage Feasible GMM for Targeting Paper
 #	(i.e. that gain+epsilon>0) This is just 1 - the cdf
 #	of epsilon evaluated at (-gain_i).
 """
-function GMM_problem(df0::DataFrame, danual; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE = true)
+function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE = true)
 
     μ_con_true = df0.reg_const2[1]
     μ_β_true   = df0.reg_pmt2[1]
@@ -178,7 +179,7 @@ function GMM_problem(df0::DataFrame, danual; δ_mom = 0., irate= 1.22, η_sd = 2
 
     # Compute NPV δ (yearly)
     irm = 1 / irate
-    δ = danual * (1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
+    δ   = danual * (1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
 
     """
     Difference between empirical and estimated moments.
@@ -215,13 +216,20 @@ function GMM_problem(df0::DataFrame, danual; δ_mom = 0., irate= 1.22, η_sd = 2
     println("First Stage: (takes approx. 1 min)")
     #t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
     #                        Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
-
     t1 = [-61298.74693924103, 23479.892469625243, 0.5083359032616762, 2.7728175583383488, -0.3194655456909087]
     @show t1
     # GMM: Second stage
     g1 = g(t1, df)
-    Om = inv(g1 * g1' / N)
+    @show g1
+    Om = inv(g1 * g1')
+
+    # F = svd(inv(g1 * g1' / N))
+    # println(F.U * Diagonal(sqrt.(F.S)))
+    #@show mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N])
+    #Om = inv(mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N]))
+    println(Om)
     # Return final theta
+    return
     println("Second stage: (takes approx. 1 min)")
     return minimizer(optimize(x -> gAg(x, Om), lb1, ub1, t1, NelderMead(),
                               Optim.Options(g_tol=1e5, show_trace = VERBOSE)))
@@ -240,12 +248,11 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = tru
     insertcols!(df, :log_c => log.(df.consumption))
     rename!(df, [:closesubtreatment => :close])
     clean(df, [:log_c, :close, :getbenefit, :pmtscore, :distt], F64)
-    @show names(df)
 
     # Run three estimations with varying discount factors
     for d_annual in [1/irate, 0.5, 0.95]
         min_t = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
-                               η_sd = η_sd, VERBOSE = VERBOSE)
+                            η_sd = η_sd, VERBOSE = VERBOSE)
         #min_t = [-61298.74678900998, 23479.89264016293, 0.5083359051349494, 2.772817555169909, -0.3194655456767444]
         temp     = round(d_annual*100)
         @show min_t
