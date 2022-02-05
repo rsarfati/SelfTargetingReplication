@@ -155,7 +155,7 @@ Two Stage Feasible GMM for Targeting Paper
 #	(i.e. that gain+epsilon>0) This is just 1 - the cdf
 #	of epsilon evaluated at (-gain_i).
 """
-function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275, N_init = 100)
+function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
     N   = size(df, 1) # No. of households
     N_m = 20          # No. of moment conditions
     N_p = 5           # No. parameters to estmate
@@ -319,7 +319,7 @@ Output: MATLAB_Estimates_main_d**.csv
 ** corresponds to the value of the annual discount factor:
    d=0.82 = 1/irate, d=0.50 or d=0.95
 """
-function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_init = 100)
+function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0)
     # Load data
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     insertcols!(df, :log_c => log.(df.consumption))
@@ -328,7 +328,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_init = 100)
     # Run three estimations with varying discount factors
     for d_annual in [1/irate, 0.5, 0.95]
         _, p_all = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
-                               η_sd = η_sd, N_init = N_init)
+                               η_sd = η_sd)
         temp     = round(d_annual*100)
         @show p_all
         CSV.write("output/MATLAB_Estimates_main_d$temp.csv", p_all)
