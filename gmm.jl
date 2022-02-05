@@ -10,7 +10,7 @@ PMT, unobs. consumption (w), distance
 
 Corresponds to `load_data.m` file in replication code.
 """
-function compute_quantiles(df::DataFrame; N_q = Dict([:consumption, :pmtscore, :unobs_cons,
+function compute_quantiles(df::Union{DataFrame, DataFrameRow}; N_q = Dict([:consumption, :pmtscore, :unobs_cons,
                                                       :distt] .=> [5, 3, 3, 4]))
     # Helper functions
     quant(N::Int64)     = [n/N for n=1:N-1]
@@ -42,8 +42,8 @@ Moments:
 15-16. two extreme cells in quartiles of distance -> Two moments
 17-20. λ moments -> Four moments
 """
-function compute_moments(df0::D, showup_hat::Vector{T}, true_λ, belief_λ,
-                         induced_λ) where {T<:Union{Float64,Int64}, D<:DataFrame}
+function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, belief_λ,
+                         induced_λ) where {T<:Union{Float64,Int64}, D<:Union{DataFrame, DataFrameRow}}
 
     # Initialize dictionary, manage NaNs in data
     moments = Vector{F64}(undef, 20)
@@ -87,7 +87,7 @@ end
 """
 Evaluate probability of showing up for each i. (Eq 22)
 """
-function showuphat(df::DataFrame, t::Vector{F64}, η_sd::F64, δ::F64; N_grid = 100)
+function showuphat(df::Union{DataFrame, DataFrameRow}, t::Vector{F64}, η_sd::F64, δ::F64; N_grid = 100)
     # Unpack parameters
     μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief = t
     # Constants
@@ -106,19 +106,26 @@ function showuphat(df::DataFrame, t::Vector{F64}, η_sd::F64, δ::F64; N_grid = 
 
     function util(η::F64)
         # Present Utility (Cost function is adjusted because "totalcost" given is based on noisy consumption measure.)
-        relu_2day = (df.consumption .* exp.(-η) - df.totcost_pc .* exp.(-η) + (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.consumption .* exp.(-η))
+        relu_2day = (df.consumption .* exp.(-η) - df.totcost_pc .* exp.(-η) +
+                    (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.consumption .* exp.(-η))
         # Future Utility: note that cdf(Normal(),) in the middle is mu function
         relu_2mor = (df.consumption .* exp.(-η) .+ df.benefit) - (df.consumption .* exp.(-η))
 
-        Mu        = cdf.(Normal(), μ_con_true .+ df.FE2 .+ μ_β_true * (df.pmtscore .- η))
-        Lambda    = cdf.(Normal(), λ_con_belief .+ λ_β_belief * (log.(df.consumption) .- η))
+        Mu = cdf.(Normal(), μ_con_true .+ df.FE2 .+ μ_β_true * (df.pmtscore .- η))
+        Λ = cdf.(Normal(), λ_con_belief .+ λ_β_belief * (log.(df.consumption) .- η))
 
-        prob_s = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Mu     .* relu_2mor) .+ αa)))
-        prob_u = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Lambda .* relu_2mor) .+ αa)))
+        prob_s = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ αa)))
+        prob_u = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Λ  .* relu_2mor) .+ αa)))
 
-        return max.(0, (α * prob_s + (1 - α) * prob_u) .* pdf.(Normal(0, η_sd), η))
+        return (α * prob_s + (1 - α) * prob_u) .* pdf.(Normal(0, η_sd), η)
     end
-    showup_hat, err = quadgk(util, lb, ub, rtol=1e-4)
+    # Gaussian quadrature with Legendre orthofonal polynomials
+    showup_hat = -(util(lb) + util(ub))
+    for η_i in range(lb, stop=ub, length=N_grid)
+        showup_hat += 2*util(η_i)
+    end
+    showup_hat *= 0.5*(ub-lb)/100
+    #showup_hat, err = quadgk(util, lb, ub, rtol=1e-4)
 
     # Rather than running probit, apply WLS.
     # Calculate inverse of mu Phi(-1)(mu) where Phi is standard normal CDF
@@ -154,7 +161,7 @@ Two Stage Feasible GMM for Targeting Paper
 #	(i.e. that gain+epsilon>0) This is just 1 - the cdf
 #	of epsilon evaluated at (-gain_i).
 """
-function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
+function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE = true)
     N   = size(df, 1) # No. of households
     N_m = 20          # No. of moment conditions
     N_p = 5           # No. parameters to estmate
@@ -172,7 +179,7 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
     Difference between empirical and estimated moments.
     """
     function g(t::Vector{T}, df1::D) where {T<:Float64, D<:Union{DataFrame, DataFrameRow}}
-        showup_hat, induced_λ = showuphat(df1, t, η_sd, δ)
+        showup_hat, induced_λ = showuphat(df1, t, η_sd, δ; N_grid = 100)
         true_λ    = cdf.(Normal(), λ_con_true   .+ λ_β_true   .* df1.log_c)
         belief_λ  = cdf.(Normal(), t[4] .+ t[5] .* df1.log_c)
         return compute_moments(df1, showup_hat, true_λ, belief_λ, induced_λ)
@@ -191,22 +198,28 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
     λ_con_0 = λ_con_true  * (0.8 .+ 0.4 * rand())
     λ_β_0   = λ_β_true    * (0.8 .+ 0.4 * rand())
 
-    t0 = [μ_ϵ_0, σ_ϵ_0, α_0, λ_con_0, λ_β_0]
+    t0 = [μ_ϵ_0, σ_ϵ_0, α_0, λ_con_0, λ_β_0]#[-79681, 59715, 0.5, 8.04, -0.72]#
 
     # GMM First step: begin with identity weighting matrix
     W0 = Matrix{Float64}(I, N_m, N_m)
-    function gAg(x::Vector{F64}, df::DataFrame, W0::Matrix{F64})
+    function gAg(x::Vector{F64}, df::DataFrame, A::Matrix{F64})
         g_eval = g(x, df)
-        return abs(g_eval' * W0 * g_eval)
+        return g_eval' * A * g_eval
     end
-    @show "First Stage:"
-    t1 = minimizer(optimize(x -> gAg(x, df, W0), lb1, ub1, t0, Fminbox(),
-                            Optim.Options(f_tol=1e-5, show_trace=true)))
+    @show "First Stage: (takes approx. 1 min)"
+    t1 = minimizer(optimize(x -> gAg(x, df, W0), lb1, ub1, t0, NelderMead(),
+                            Optim.Options(f_tol=1e-3, show_trace = VERBOSE)))
+
+    #t1 = [-61298.74693924103, 23479.892469625243, 0.5083359032616762, 2.7728175583383488, -0.3194655456909087]
     # GMM: Second stage
-    Om = inv(mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N]))
+    @show g1 = g(t1, df)
+    F = svd(inv(g1 * g1' / N))
+    Om = F.U * Diagonal(sqrt.(F.S))
+    #Om = inv(g1 * g1' / N)#inv(mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N]))
     # Return final theta
     @show "Second stage:"
-    return minimizer(optimize(x -> gAg(x, df, Om), lb1, ub1, t1))
+    return minimizer(optimize(x -> gAg(x, df, Om), lb1, ub1, t1, NelderMead(),
+                              Optim.Options(f_tol=1e-3, show_trace = VERBOSE)))
 end
 
 """
@@ -216,7 +229,7 @@ Output: MATLAB_Estimates_main_d**.csv
 ** corresponds to the value of the annual discount factor:
    d=0.82 = 1/irate, d=0.50 or d=0.95
 """
-function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0)
+function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = true)
     # Load data
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     insertcols!(df, :log_c => log.(df.consumption))
@@ -226,10 +239,11 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0)
 
     # Run three estimations with varying discount factors
     for d_annual in [1/irate, 0.5, 0.95]
-        _, p_all = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate, η_sd = η_sd)
+        min_t = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
+                               η_sd = η_sd, VERBOSE = VERBOSE)
         temp     = round(d_annual*100)
-        @show p_all
-        CSV.write("output/MATLAB_Estimates_main_d$temp.csv", p_all)
+        @show min_t
+        CSV.write("output/MATLAB_Estimates_main_d$temp.csv", min_t)
     end
 
     # Standard errors // run bootstrapping.m
