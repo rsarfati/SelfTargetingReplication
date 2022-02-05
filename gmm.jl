@@ -118,7 +118,6 @@ function showuphat(df::DataFrame, t::Vector{F64}, η_sd::F64, δ::F64; N_grid = 
 
         return max.(0, (α * prob_s + (1 - α) * prob_u) .* pdf.(Normal(0, η_sd), η))
     end
-
     showup_hat, err = quadgk(util, lb, ub, rtol=1e-4)
 
     # Rather than running probit, apply WLS.
@@ -165,7 +164,7 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
     λ_con_true = df.reg_nofe_const[1]
     λ_β_true   = df.reg_nofe_logcon[1]
 
-    # compute NPV δ (yearly)
+    # Compute NPV δ (yearly)
     irm = 1 / irate
     δ = danual * (1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
 
@@ -179,63 +178,35 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275)
         return compute_moments(df1, showup_hat, true_λ, belief_λ, induced_λ)
     end
 
-    ### GMM: First Step
+    ### GMM: First Step (Initial values nabbed from Matlab)
     lb1 = [-200000,     0,  0.001,  0, -2]
     ub1 = [ 200000, 200000, 0.999, 20,  1]
-    # generate random sets of possible initial values for each parameter
-    # "get benefit" function, λ for the naive people
-    λ_con_rand = λ_con_true  * (0.8 .+ 0.4 * rand())
-    λ_β_rand   = λ_β_true    * (0.8 .+ 0.4 * rand())
 
     # Currently imposing some function of random rho + noise
-    σ_ϵ_rand =  26805 .* (0.8 .+ 0.4 .* rand())
-    μ_ϵ_rand = -26215 .* (0.8 .+ 0.4 .* rand())
-    α_rand   = 0.001 .+ 0.999 * rand()
+    μ_ϵ_0 = -26215 .* (0.8 .+ 0.4 .* rand())
+    σ_ϵ_0 =  26805 .* (0.8 .+ 0.4 .* rand())
+    α_0   =  0.001 .+ 0.999 * rand()
 
-    # Select initial parameters
+    # "get benefit" function, λ for the naive people
+    λ_con_0 = λ_con_true  * (0.8 .+ 0.4 * rand())
+    λ_β_0   = λ_β_true    * (0.8 .+ 0.4 * rand())
+
+    t0 = [μ_ϵ_0, σ_ϵ_0, α_0, λ_con_0, λ_β_0]
+
     # GMM First step: begin with identity weighting matrix
     W0 = Matrix{Float64}(I, N_m, N_m)
-    t0 = [μ_ϵ_rand, σ_ϵ_rand, α_rand, λ_con_rand, λ_β_rand]
-    t1 = minimizer(optimize(x -> g(x, df)' * W0 * g(x, df), t0, lower=lb1, upper=ub1))
+    function gAg(x::Vector{F64}, df::DataFrame, W0::Matrix{F64})
+        g_eval = g(x, df)
+        return abs(g_eval' * W0 * g_eval)
+    end
+    @show "First Stage:"
+    t1 = minimizer(optimize(x -> gAg(x, df, W0), lb1, ub1, t0, Fminbox(),
+                            Optim.Options(f_tol=1e-5, show_trace=true)))
     # GMM: Second stage
-    Om = mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N])
+    Om = inv(mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N]))
     # Return final theta
-    @show "leaving?"
-    return minimizer(optimize(x -> g(x, df)' * inv(Om) * g(x, df), t1))
-
-    ## Second Stage: Find Params with Optimal Weighting Matrix
-    @show "Second Stage Begin"
-    #θ_fs = [-67020	60897	0.22044	8.6504	-0.77535]
-     μ_ϵ  = θ_fs[1]
-     σ_ϵ = θ_fs[2]
-     α   = θ_fs[3]
-     λ_con_belief  = θ_fs[4]
-     λ_β_belief = θ_fs[5]
-
-     showup_hat, induced_λ = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ)
-
-     belief_λ  = cdf(Normal(), λ_con_belief + λ_β_belief * df.log_c)
-     true_λ    = cdf(Normal(), λ_con_true   + λ_β_true   * df.log_c)
-
-    moms = moments( showup_hat, true_λ, belief_λ, induced_λ, δ_mom )
-
-    N     = size(consumption,1)
-    Winv  = (moms' * moms) / N
-    W     = inv(Winv)
-    Whalf = chol(W)'
-    norm((Whalf * Whalf') - W) #check decomposition worked
-
-    minindex = argmin(Fval_ss)
-    ismax = (1:N_init) .== minindex
-
-    all_θ = [μ_ϵ_rand, Fitθ_fs[:,1], Fitθ_ss[:,1],
-              σ_ϵ_rand,Fitθ_fs[:,2], Fitθ_ss[:,2],
-              α_rand,  Fitθ_fs[:,3], Fitθ_ss[:,3],
-              λ_con_rand,  Fitθ_fs[:,4], Fitθ_ss[:,4],
-              λ_β_rand, Fitθ_fs[:,5], Fitθ_ss[:,5],
-              Fval_fs, Fval_ss, exitflag_fs, exitflag_ss, ismax']
-
-    return W, all_θ
+    @show "Second stage:"
+    return minimizer(optimize(x -> gAg(x, df, Om), lb1, ub1, t1))
 end
 
 """
@@ -250,6 +221,8 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0)
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     insertcols!(df, :log_c => log.(df.consumption))
     rename!(df, [:closesubtreatment => :close])
+    clean(df, [:log_c, :close, :getbenefit, :pmtscore, :distt], F64)
+    @show names(df)
 
     # Run three estimations with varying discount factors
     for d_annual in [1/irate, 0.5, 0.95]
