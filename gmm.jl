@@ -87,25 +87,25 @@ end
 """
 Evaluate probability of showing up for each i. (Eq 22)
 """
-function showuphat(df::Union{DataFrame, DataFrameRow}, t::Vector{F64}, η_sd::F64, δ::F64; N_grid = 100)
+function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
+                   δ::T, μ_con_true::T, μ_β_true::T, λ_con_true::T, λ_β_true::T;
+                   N_grid = 100) where {T<:F64}
+
     # Unpack parameters
     μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief = t
-    # Constants
-    μ_con_true = df.reg_const2[1]
-    μ_β_true   = df.reg_pmt2[1]
-    λ_con_true = df.reg_nofe_const[1]
-    λ_β_true   = df.reg_nofe_logcon[1]
+
     # Convert mean and standard deviation into α and β
     s  = sqrt(3 * (σ_ϵ ^ 2) ./ (pi ^ 2))
     αa = μ_ϵ ./ s
     β  = 1 ./ s
+
     # Lower and upper bound, grid density for the numerical integration over eta
     lb = -η_sd*4
     ub = -lb
     N  = length(df.consumption)
 
     function util(η::F64)
-        # Present Utility (Cost function is adjusted because "totalcost" given is based on noisy consumption measure.)
+        # Present Utility (Cost function adjusted because "totalcost" given is based on noisy consumption measure.)
         relu_2day = (df.consumption .* exp.(-η) - df.totcost_pc .* exp.(-η) +
                     (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.consumption .* exp.(-η))
         # Future Utility: note that cdf(Normal(),) in the middle is mu function
@@ -161,15 +161,20 @@ Two Stage Feasible GMM for Targeting Paper
 #	(i.e. that gain+epsilon>0) This is just 1 - the cdf
 #	of epsilon evaluated at (-gain_i).
 """
-function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE = true)
+function GMM_problem(df0::DataFrame, danual; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE = true)
+
+    μ_con_true = df0.reg_const2[1]
+    μ_β_true   = df0.reg_pmt2[1]
+    λ_con_true = df0.reg_nofe_const[1]
+    λ_β_true   = df0.reg_nofe_logcon[1]
+
+    df = df0[:, [:totcost_pc, :moneycost, :consumption, :log_c, :distt, :pmtscore,
+                :FE2, :getbenefit, :benefit, :showup, :close]]
+    df = compute_quantiles(df)
+
     N   = size(df, 1) # No. of households
     N_m = 20          # No. of moment conditions
     N_p = 5           # No. parameters to estmate
-
-    df = compute_quantiles(df)
-
-    λ_con_true = df.reg_nofe_const[1]
-    λ_β_true   = df.reg_nofe_logcon[1]
 
     # Compute NPV δ (yearly)
     irm = 1 / irate
@@ -179,7 +184,8 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE 
     Difference between empirical and estimated moments.
     """
     function g(t::Vector{T}, df1::D) where {T<:Float64, D<:Union{DataFrame, DataFrameRow}}
-        showup_hat, induced_λ = showuphat(df1, t, η_sd, δ; N_grid = 100)
+        showup_hat, induced_λ = showuphat(df1, t, η_sd, δ, μ_con_true, μ_β_true,
+                                          λ_con_true, λ_β_true)
         true_λ    = cdf.(Normal(), λ_con_true   .+ λ_β_true   .* df1.log_c)
         belief_λ  = cdf.(Normal(), t[4] .+ t[5] .* df1.log_c)
         return compute_moments(df1, showup_hat, true_λ, belief_λ, induced_λ)
@@ -198,28 +204,27 @@ function GMM_problem(df, danual; δ_mom = 0., irate= 1.22, η_sd = 275, VERBOSE 
     λ_con_0 = λ_con_true  * (0.8 .+ 0.4 * rand())
     λ_β_0   = λ_β_true    * (0.8 .+ 0.4 * rand())
 
-    t0 = [μ_ϵ_0, σ_ϵ_0, α_0, λ_con_0, λ_β_0]#[-79681, 59715, 0.5, 8.04, -0.72]#
+    t0 = [-79681, 59715, 0.5, 8.04, -0.72]#[μ_ϵ_0, σ_ϵ_0, α_0, λ_con_0, λ_β_0]
 
     # GMM First step: begin with identity weighting matrix
     W0 = Matrix{Float64}(I, N_m, N_m)
-    function gAg(x::Vector{F64}, df::DataFrame, A::Matrix{F64})
+    function gAg(x::Vector{F64}, A::Matrix{F64})
         g_eval = g(x, df)
-        return g_eval' * A * g_eval
+        return abs.(g_eval' * A * g_eval)
     end
-    @show "First Stage: (takes approx. 1 min)"
-    t1 = minimizer(optimize(x -> gAg(x, df, W0), lb1, ub1, t0, NelderMead(),
-                            Optim.Options(f_tol=1e-3, show_trace = VERBOSE)))
+    println("First Stage: (takes approx. 1 min)")
+    #t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
+    #                        Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
 
-    #t1 = [-61298.74693924103, 23479.892469625243, 0.5083359032616762, 2.7728175583383488, -0.3194655456909087]
+    t1 = [-61298.74693924103, 23479.892469625243, 0.5083359032616762, 2.7728175583383488, -0.3194655456909087]
+    @show t1
     # GMM: Second stage
-    @show g1 = g(t1, df)
-    F = svd(inv(g1 * g1' / N))
-    Om = F.U * Diagonal(sqrt.(F.S))
-    #Om = inv(g1 * g1' / N)#inv(mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N]))
+    g1 = g(t1, df)
+    Om = inv(g1 * g1' / N)
     # Return final theta
-    @show "Second stage:"
-    return minimizer(optimize(x -> gAg(x, df, Om), lb1, ub1, t1, NelderMead(),
-                              Optim.Options(f_tol=1e-3, show_trace = VERBOSE)))
+    println("Second stage: (takes approx. 1 min)")
+    return minimizer(optimize(x -> gAg(x, Om), lb1, ub1, t1, NelderMead(),
+                              Optim.Options(g_tol=1e5, show_trace = VERBOSE)))
 end
 
 """
@@ -241,9 +246,10 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = tru
     for d_annual in [1/irate, 0.5, 0.95]
         min_t = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
                                η_sd = η_sd, VERBOSE = VERBOSE)
+        #min_t = [-61298.74678900998, 23479.89264016293, 0.5083359051349494, 2.772817555169909, -0.3194655456767444]
         temp     = round(d_annual*100)
         @show min_t
-        CSV.write("output/MATLAB_Estimates_main_d$temp.csv", min_t)
+        CSV.write("output/MATLAB_Estimates_main_d$temp.csv", Tables.table(min_t))
     end
 
     # Standard errors // run bootstrapping.m
