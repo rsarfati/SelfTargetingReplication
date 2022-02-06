@@ -253,24 +253,29 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
             try
                 θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate = irate,
                                          η_sd = η_sd, VERBOSE = false)
-                # Write output so far to file (overwrite each iteration)
-                CSV.write("output/MATLAB_bs_$(Int(δ_y * 100))_secondhalf.csv", Tables.table(θ_bs))
+                CSV.write("output/MATLAB_bs_$(Int(round(δ_y * 100)))_secondhalf.csv", Tables.table(θ_bs))
                 it += 1
-            catch
-                println("Error in estimation, running new bootstrap iteration!")
+            catch e
+                @show e
+                if typeof(e) <: DomainError
+                    println("Domain error in estimation, running new bootstrap iteration!")
+                else
+                    throw(e)
+                end
             end
         end
     end
     if output_tables
         δ_y   = 1 / irate
         t_est = CSV.read("output/MATLAB_est_d$(round(δ_y * 100)).csv")
-        θ_bs  = CSV.read("output/MATLAB_bs_$(Int(δ_y * 100)).csv")
+        θ_bs  = CSV.read("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
         bs_SE = [std(θ_bs[:,i]) for i=1:N_p]
 
         # Directly write LaTeX table
-        io    = open("output/tables/Table8.tex", "w")
-        write(io, "\\begin{tabular}{ccccc}\\toprule")
-        write(io, "\$\\nu_{\\epsilon}\$ & \$\\sigma_{\\epsilon}\$ & \$\\alpha\$ & \$\\gamma\$ & \$\\pi\$ \\\\ \\midrule")
+        io = open("output/tables/Table8.tex", "w")
+        write(io, "\\begin{tabular}{ccccc}\\toprule" *
+                  "\$\\nu_{\\epsilon}\$ & \$\\sigma_{\\epsilon}\$ &" *
+                  " \$\\alpha\$ & \$\\gamma\$ & \$\\pi\$ \\\\ \\midrule")
         @printf(io, " %5i &  %5i & %0.2f & % 0.2fi & %0.2f \\\\", t_est...)
         @printf(io, "(%4i) & (%5i) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", bs_SE...)
         write(io, "\\bottomrule\\end{tabular}")
