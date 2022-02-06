@@ -1,6 +1,6 @@
 """
 ```
-compute_quantiles(df::DataFrame; N_q = Dict([:consumption, :pmtscore,
+compute_quantiles(df::DataFrame; N_q = Dict([:c, :pmtscore,
            :unobs_cons, :distt] .=> [5, 3, 3, 4]]))
 ```
 Computes quantiles of variables in inputted dictionary, and puts the associated
@@ -9,7 +9,7 @@ PMT, unobs. consumption (w), distance
 
 Corresponds to `load_data.m` file in replication code.
 """
-function compute_quantiles(df::Union{DataFrame, DataFrameRow}; N_q = Dict([:consumption, :pmtscore,
+function compute_quantiles(df::DataFrame; N_q = Dict([:c, :pmtscore,
                                        :unobs_cons, :distt] .=> [5, 3, 3, 4]))
     # Helper functions
     quant(N::Int64)     = [n/N for n=1:N-1]
@@ -28,7 +28,7 @@ end
 
 """
 ```
-compute_moments(df0::D, showup::Vector{T}) where {T<:Number,D<:Union{DataFrame, DataFrameRow}}
+compute_moments(df0::D, showup::Vector{T}) where {T<:Number,D<:DataFrame}
 ```
 Moments:
 1-10.  mean showup rates in (measured) consumption quintiles in far and close
@@ -39,43 +39,45 @@ Moments:
 15-16. two extreme cells in quartiles of distance -> Two moments
 17-20. λ moments -> Four moments
 """
-function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, belief_λ,
-                         induced_λ) where {T<:Union{Float64,Int64}, D<:Union{DataFrame, DataFrameRow}}
+function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, bel_λ,
+                         ind_λ) where {T<:Union{Float64,Int64}, D<:DataFrame}
 
     # Initialize dictionary, manage NaNs in data
-    N = length(showup_hat)
-    moments = Matrix{F64}(undef, N, 20)
-    showup  = (df0.showup .== 1) .& .!ismissing.(df0.showup)
+    N        = length(showup_hat)
+    moments  = Matrix{F64}(undef, N, 20)
+    showup   = (df0.showup .== 1) .& .!ismissing.(df0.showup)
+    Δ_logc   = df0.log_c .- mean(df0.log_c)
+    Δ_showup = showup - showup_hat
 
     # 1-10 Far/close subtreatment x i=1:5th quintile of consumption
     for i=1:5
-        far_i   = (df0.consumption_q .== i) .&   iszero.(df0.close)
-        close_i = (df0.consumption_q .== i) .& .!iszero.(df0.close)
-        moments[:,i]   = (showup .* far_i   - showup_hat .* far_i)  /sum(far_i)
-        moments[:,5+i] = (showup .* close_i - showup_hat .* close_i)/sum(close_i)
+        far_i   = (df0.c_q .== i) .&   iszero.(df0.close)
+        close_i = (df0.c_q .== i) .& .!iszero.(df0.close)
+
+        moments[:,i]   = Δ_showup .* far_i   / sum(far_i)
+        moments[:,5+i] = Δ_showup .* close_i / sum(close_i)
     end
 
     # 11-14 {Top, bottom tercile} x {observable, unobservable consumption}
     for (i, Q) in enumerate([[3,1], [3,3], [1,1], [1,3]])
         idx = (df0.pmtscore_q .== Q[1]) .& (df0.unobs_cons_q .== Q[2])
-        moments[:,10 + i] = (showup .* idx - showup_hat .* idx) / sum(idx)
+
+        moments[:,10 + i] = Δ_showup .* idx / sum(idx)
     end
 
     # 15-16 Top and bottom distance quartiles
     T_D = (df0.distt_q .== 4)
     B_D = (df0.distt_q .== 1)
 
-    moments[:,15] =  (showup .* T_D - showup_hat .* T_D) / sum(T_D)
-    moments[:,16] =  (showup .* B_D - showup_hat .* B_D) / sum(B_D)
+    moments[:,15] =  Δ_showup .* T_D / sum(T_D)
+    moments[:,16] =  Δ_showup .* B_D / sum(B_D)
 
     # 17-20 Mean λ function moments
     N_show        = sum(showup)
-    moments[:,17] = (belief_λ .- df0.getbenefit)   .* showup / N_show
-    moments[:,18] = (belief_λ .- df0.getbenefit)   .*
-                        (df0.log_c .- mean(df0.log_c)) .* showup / N_show
-    moments[:,19] = (induced_λ .- df0.getbenefit)  .* showup / N_show
-    moments[:,20] = (induced_λ .- df0.getbenefit)  .*
-                        (df0.log_c .- mean(df0.log_c)) .* showup / N_show
+    moments[:,17] = (bel_λ .- df0.getbenefit)           .* showup / N_show
+    moments[:,18] = (bel_λ .- df0.getbenefit) .* Δ_logc .* showup / N_show
+    moments[:,19] = (ind_λ .- df0.getbenefit)           .* showup / N_show
+    moments[:,20] = (ind_λ .- df0.getbenefit) .* Δ_logc .* showup / N_show
 
     # If showup hat exactly zero, the λ moments are NaN; replace w/ large number
     moments[isnan.(moments)] .= 10000.
@@ -90,7 +92,8 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
                    N_grid = 100) where {T<:F64}
 
     # Unpack parameters
-    μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief = t
+    μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel = t
+    N = length(df.c)
 
     # Convert mean and standard deviation into α and β
     s  = sqrt(3 * (σ_ϵ ^ 2) ./ (pi ^ 2))
@@ -100,18 +103,16 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     # Lower and upper bound, grid density for the numerical integration over eta
     lb = -η_sd*4
     ub = -lb
-    N  = length(df.consumption)
 
     function util(η::F64)
-        # Present Utility (Cost function adjusted bc "totalcost" is based on
-        # noisy consumption measure.)
-        relu_2day = (df.consumption .* exp.(-η) - df.totcost_pc .* exp.(-η) +
-                    (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.consumption .* exp.(-η))
-        # Future Utility: note that cdf(Normal(),) in the middle is mu function
-        relu_2mor = (df.consumption .* exp.(-η) .+ df.benefit) - (df.consumption .* exp.(-η))
+        # Present Utility
+        relu_2day = (df.c .* exp.(-η) - df.totcost_pc .* exp.(-η) +
+                    (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.c .* exp.(-η))
+        # Future Utility
+        relu_2mor = (df.c .* exp.(-η) .+ df.benefit) - (df.c .* exp.(-η))
 
         Mu = cdf.(Normal(), μ_con_true .+ df.FE2 .+ μ_β_true * (df.pmtscore .- η))
-        Λ = cdf.(Normal(), λ_con_belief .+ λ_β_belief * (log.(df.consumption) .- η))
+        Λ  = cdf.(Normal(), λ_con_bel .+ λ_β_bel * (log.(df.c) .- η))
 
         prob_s = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ αa)))
         prob_u = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Λ  .* relu_2mor) .+ αa)))
@@ -167,7 +168,7 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
     λ_con_true = df0.reg_nofe_const[1]
     λ_β_true   = df0.reg_nofe_logcon[1]
 
-    df = df0[:, [:totcost_pc, :moneycost, :consumption, :log_c, :distt, :pmtscore,
+    df = df0[:, [:totcost_pc, :moneycost, :c, :log_c, :distt, :pmtscore,
                 :FE2, :getbenefit, :benefit, :showup, :close]]
     df = compute_quantiles(df)
 
@@ -182,36 +183,29 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
     """
     Difference between empirical and estimated moments.
     """
-    function g(t::Vector{T}, df1::D) where {T<:Float64, D<:Union{DataFrame, DataFrameRow}}
+    function g(t::Vector{T}, df1::D) where {T<:Float64, D<:DataFrame}
         showup_hat, induced_λ = showuphat(df1, t, η_sd, δ, μ_con_true, μ_β_true,
                                           λ_con_true, λ_β_true)
         true_λ    = cdf.(Normal(), λ_con_true   .+ λ_β_true   .* df1.log_c)
-        belief_λ  = cdf.(Normal(), t[4] .+ t[5] .* df1.log_c)
-        return compute_moments(df1, showup_hat, true_λ, belief_λ, induced_λ)
+        bel_λ  = cdf.(Normal(), t[4] .+ t[5] .* df1.log_c)
+        return compute_moments(df1, showup_hat, true_λ, bel_λ, induced_λ)
+    end
+    function gAg(x::Vector{F64}, A::Matrix{F64})
+        g_eval = mean(g(x, df),dims=1)
+        return (g_eval * A * g_eval')[1]
     end
 
     ### GMM: First Step (Initial values nabbed from Matlab)
     lb1 = [-200000,     0,  0.001,  0, -2]
     ub1 = [ 200000, 200000, 0.999, 20,  1]
 
-    # Currently imposing some function of random rho + noise
-    μ_ϵ_0 = -26215 .* (0.8 .+ 0.4 .* rand())
-    σ_ϵ_0 =  26805 .* (0.8 .+ 0.4 .* rand())
-    α_0   =  0.001 .+ 0.999 * rand()
+    # Feed in some reasonable starting values (Julia's Optim package
+    # explores different starting values by default!)
+    t0 = [-79681, 59715, 0.5, 8.04, -0.72]
 
-    # "get benefit" function, λ for the naive people
-    λ_con_0 = λ_con_true  * (0.8 .+ 0.4 * rand())
-    λ_β_0   = λ_β_true    * (0.8 .+ 0.4 * rand())
-
-    t0 = [-79681, 59715, 0.5, 8.04, -0.72]#[μ_ϵ_0, σ_ϵ_0, α_0, λ_con_0, λ_β_0]
-
-    # GMM First step: begin with identity weighting matrix
-    W0 = Matrix{Float64}(I, N_m, N_m)
-    function gAg(x::Vector{F64}, A::Matrix{F64})
-        g_eval = mean(g(x, df),dims=1)
-        return (g_eval * A * g_eval')[1]
-    end
     println("First Stage: (takes approx. 1 min)")
+    # Begin with identity weighting matrix
+    W0 = Matrix{Float64}(I, N_m, N_m)
     t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
                             Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
     @show t1
@@ -232,21 +226,23 @@ Output: MATLAB_Estimates_main_d**.csv
 ** corresponds to the value of the annual discount factor:
    d=0.82 = 1/irate, d=0.50 or d=0.95
 """
-function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = true)
+function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0,
+                        bootstrap_only = false, VERBOSE = false)
     # Load data
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     insertcols!(df, :log_c => log.(df.consumption))
-    rename!(df, [:closesubtreatment => :close])
-    clean(df, [:log_c, :close, :getbenefit, :pmtscore, :distt], F64)
+    rename!(df, [:closesubtreatment => :close, :consumption => :c])
+    clean(df, [:log_c, :close, :getbenefit, :pmtscore, :distt, :c], F64)
 
     # Run three estimations with varying discount factors
-    for d_annual in [1/irate, 0.5, 0.95]
-        min_t = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
-                            η_sd = η_sd, VERBOSE = VERBOSE)
-        #min_t = [-61298.74678900998, 23479.89264016293, 0.5083359051349494, 2.772817555169909, -0.3194655456767444]
-        temp     = round(d_annual*100)
-        @show min_t
-        CSV.write("output/MATLAB_Estimates_main_d$temp.csv", Tables.table(min_t))
+    if !bootstrap_only
+        for d_annual in [1/irate, 0.5, 0.95]
+            min_t = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
+                                η_sd = η_sd, VERBOSE = VERBOSE)
+            temp     = round(d_annual*100)
+            @show min_t
+            CSV.write("output/MATLAB_Estimates_main_d$temp.csv", Tables.table(min_t))
+        end
     end
 
     # Standard errors // run bootstrapping.m
@@ -315,8 +311,8 @@ end
 #     μ_ϵ        = -79681;
 #     σ_ϵ       = 59715;
 #     α         = 0.5049;
-#     λ_con_belief    = 8.0448;
-#     λ_β_belief   = -0.71673;
+#     λ_con_bel    = 8.0448;
+#     λ_β_bel   = -0.71673;
 #
 #     # full sample
 #     sample = [];
@@ -328,15 +324,15 @@ end
 #         global hhid quant_idx;
 #
 #         # Column 1 is showup, Column 2 is showuphat
-#         [ showup_hat, ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#         [ showup_hat, ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #         showup_table   = [table(hhid), table(quant_idx), table(showup_hat)];
 #
 #         # Column 3 Half Standard Deviation of epsilon
-#         [ showup_hat_halfsd , ~ ] = showuphat(μ_ϵ, σ_ϵ/2, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#         [ showup_hat_halfsd , ~ ] = showuphat(μ_ϵ, σ_ϵ/2, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #         showup_table   = [showup_table, table(showup_hat_halfsd)];
 #
 #         # Column 4 No epsilon variance
-#         [ showup_hat_noeps , ~ ] = showuphat(μ_ϵ, σ_ϵ/1e10, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#         [ showup_hat_noeps , ~ ] = showuphat(μ_ϵ, σ_ϵ/1e10, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #         showup_table   = [showup_table, table(showup_hat_noeps)];
 #
 #         ### replace travel cost by same travel cost
@@ -344,7 +340,7 @@ end
 #         totcost_pc = totcost_smth_pc; ##ok<NASGU>
 #
 #         # Column 5 no differential travel cost
-#         [ showup_hat_smthc , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#         [ showup_hat_smthc , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #         showup_table   = [showup_table, table(showup_hat_smthc)];
 #
 #         ### reload data, and assume constanta MU and λ
@@ -352,15 +348,15 @@ end
 #         mean_mu = 0.0967742; # mean benefit receipt conditional on applying
 #
 #         global μ_con_true μ_β_true FE FE2;
-#         λ_con_belief_cml = norminv(mean_mu);
-#         λ_β_belief_cml = 0;
+#         λ_con_bel_cml = norminv(mean_mu);
+#         λ_β_bel_cml = 0;
 #         μ_con_true = norminv(mean_mu);
 #         μ_β_true = 0;
 #         FE = FE*0;
 #         FE2 = FE2*0;
 #
 #         # Column 6 (constant mu AND λ, update from the previous draft)
-#         [ showup_hat_cml  , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief_cml, λ_β_belief_cml, η_sd, δ);
+#         [ showup_hat_cml  , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel_cml, λ_β_bel_cml, η_sd, δ);
 #         showup_table   = [showup_table, table(showup_hat_cml)];
 #
 #
@@ -375,37 +371,37 @@ end
 #             load_data(sample,small_sample_dummy);
 #             global totcost_pc totcost_3k_pc close
 #             totcost_pc = (1-close).*totcost_3k_pc + close.*totcost_pc;
-#             [ showup_hat_km3 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#             [ showup_hat_km3 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #             showup_table   = [showup_table, table(showup_hat_km3)];
 #
 #             # Column 8: 6 extra km
 #             load_data(sample,small_sample_dummy);
 #             global totcost_pc totcost_6k_pc close
 #             totcost_pc = (1-close).*totcost_6k_pc + close.*totcost_pc;
-#             [ showup_hat_km6 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#             [ showup_hat_km6 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #             showup_table   = [showup_table, table(showup_hat_km6)];
 #
 #             # Column 9: 3x waiting time
 #             load_data(sample,small_sample_dummy);
 #             global totcost_pc hhsize close ave_waiting wagerate
 #             totcost_pc = totcost_pc + (1-close).*(2.*ave_waiting.*wagerate)./(hhsize.*60);
-#             [ showup_hat_3aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#             [ showup_hat_3aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #             showup_table   = [showup_table, table(showup_hat_3aw)];
 #
 #             # Column 10: 6x waiting time
 #             load_data(sample,small_sample_dummy);
 #             global totcost_pc hhsize close ave_waiting wagerate
 #             totcost_pc = totcost_pc + (1-close).*(5.*ave_waiting.*wagerate)./(hhsize.*60);
-#             [ showup_hat_6aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_belief, λ_β_belief, η_sd, δ);
+#             [ showup_hat_6aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ);
 #             showup_table   = [showup_table, table(showup_hat_6aw)];
 #
 #
 #             # Column 11-12 α=0 (all-unsophisticated) and α=1 (all sophisticated)
 #             load_data(sample,small_sample_dummy);
-#             [ showup_hat_α0 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 0, λ_con_belief, λ_β_belief, η_sd, δ);
+#             [ showup_hat_α0 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 0, λ_con_bel, λ_β_bel, η_sd, δ);
 #             showup_table   = [showup_table, table(showup_hat_α0)];
 #
-#             [ showup_hat_α1 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 1, λ_con_belief, λ_β_belief, η_sd, δ);
+#             [ showup_hat_α1 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 1, λ_con_bel, λ_β_bel, η_sd, δ);
 #             showup_table   = [showup_table, table(showup_hat_α1)];
 #
 #             writetable(showup_table, [tempfolder 'MATLAB_showuphat.csv']);
