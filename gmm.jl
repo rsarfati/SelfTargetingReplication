@@ -154,7 +154,7 @@ Two Stage Feasible GMM for Targeting Paper
 #	of epsilon evaluated at (-gain_i).
 """
 function GMM_problem(df0::DataFrame, danual::T; δ_mom::T = 0.0, irate::T = 1.22,
-                     η_sd::T = 275.0, VERBOSE=true)
+                     η_sd::T = 275.0, VERBOSE=true) where T<:F64
 
     μ_con_true = df0.reg_const2[1]
     μ_β_true   = df0.reg_pmt2[1]
@@ -232,7 +232,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
         for δ_y in [1/irate, 0.5, 0.95]
             min_t = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
                                 η_sd = η_sd, VERBOSE = VERBOSE)
-            @show min_t
+            println("Estimated parameters are: ", min_t)
             CSV.write("output/MATLAB_est_d$(round(δ_y * 100)).csv",
                       Tables.table(min_t))
         end
@@ -243,7 +243,8 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
         N_p  = 5           # No. of parameters to estimate
         δ_y  = 1 / irate   # Alt: danual = 0.50 and = 0.95.
         θ_bs = zeros(N_bs, N_p)
-        for it=1:N_bs
+        it   = 1
+        while it <= N_bs
             println("\nBootstrap iteration: $it")
             println("------------------------")
             # Randomly draw households (with replacement)
@@ -252,26 +253,26 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
             try
                 θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate = irate,
                                          η_sd = η_sd, VERBOSE = false)
+                # Write output so far to file (overwrite each iteration)
+                CSV.write("output/MATLAB_bs_$(Int(δ_y * 100))_secondhalf.csv", Tables.table(θ_bs))
+                it += 1
             catch
-                idx_bs     = sample(1:N, N; replace = true)
-                df_bs      = df[idx_bs,:]
-                θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate = irate,
-                                         η_sd = η_sd, VERBOSE = false)
+                println("Error in estimation, running new bootstrap iteration!")
             end
-            # Write output so far to file (overwrite each iteration)
-            CSV.write("output/MATLAB_bs_$(Int(δ_y * 100))_secondhalf.csv", Tables.table(θ_bs))
         end
     end
     if output_tables
-        δ_y  = 1 / irate
+        δ_y   = 1 / irate
         t_est = CSV.read("output/MATLAB_est_d$(round(δ_y * 100)).csv")
         θ_bs  = CSV.read("output/MATLAB_bs_$(Int(δ_y * 100)).csv")
-        io = open("output/tables/Table8.tex", "w")
+        bs_SE = [std(θ_bs[:,i]) for i=1:N_p]
+
         # Directly write LaTeX table
+        io    = open("output/tables/Table8.tex", "w")
         write(io, "\\begin{tabular}{ccccc}\\toprule")
         write(io, "\$\\nu_{\\epsilon}\$ & \$\\sigma_{\\epsilon}\$ & \$\\alpha\$ & \$\\gamma\$ & \$\\pi\$ \\\\ \\midrule")
         @printf(io, " %5i &  %5i & %0.2f & % 0.2fi & %0.2f \\\\", t_est...)
-        @printf(io, "(%4i) & (%5i) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", )
+        @printf(io, "(%4i) & (%5i) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", bs_SE...)
         write(io, "\\bottomrule\\end{tabular}")
         close(io)
     end
@@ -286,120 +287,120 @@ end
     # Output: MATLAB_showuphat_small_sample.csv
     #         MATLAB_showuphat.csv
 """
-function counterfactuals_1()
-    ##################
-    # fixed parameters
-    ##################
-
-    η_sd = 0.275
-    irate = 1.22
-    danual = 1/irate
-    irm    = 1/irate
-    δ = danual*(1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
-
-    ##################
-    # Input parameters manually
-    # these are the baseline estimated parameters (danual = 1/irate)
-    ##################
-
-    μ_ϵ       = -79681
-    σ_ϵ       = 59715
-    α         = 0.5049
-    λ_con_bel = 8.0448
-    λ_β_bel   = -0.71673
-
-    # full sample
-    sample = []
-
-    for small_sample_dummy = 0:1
-
-        # load full data
-        load_data(sample,small_sample_dummy)
-        global hhid quant_idx
-
-        # Column 1 is showup, Column 2 is showuphat
-        [ showup_hat, ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
-        showup_table   = [table(hhid), table(quant_idx), table(showup_hat)]
-
-        # Column 3 Half Standard Deviation of epsilon
-        [ showup_hat_halfsd , ~ ] = showuphat(μ_ϵ, σ_ϵ/2, α, λ_con_bel, λ_β_bel, η_sd, δ)
-        showup_table   = [showup_table, table(showup_hat_halfsd)]
-
-        # Column 4 No epsilon variance
-        [ showup_hat_noeps , ~ ] = showuphat(μ_ϵ, σ_ϵ/1e10, α, λ_con_bel, λ_β_bel, η_sd, δ)
-        showup_table   = [showup_table, table(showup_hat_noeps)]
-
-        ### replace travel cost by same travel cost
-        global totcost_smth_pc totcost_pc
-        totcost_pc = totcost_smth_pc ##ok<NASGU>
-
-        # Column 5 no differential travel cost
-        [ showup_hat_smthc , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
-        showup_table   = [showup_table, table(showup_hat_smthc)]
-
-        ### reload data, and assume constanta MU and λ
-        load_data(sample,small_sample_dummy)
-        mean_mu = 0.0967742 # mean benefit receipt conditional on applying
-
-        global μ_con_true μ_β_true FE FE2
-        λ_con_bel_cml = norminv(mean_mu)
-        λ_β_bel_cml = 0
-        μ_con_true = norminv(mean_mu)
-        μ_β_true = 0
-        FE = FE*0
-        FE2 = FE2*0
-
-        # Column 6 (constant mu AND λ, update from the previous draft)
-        [ showup_hat_cml  , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel_cml, λ_β_bel_cml, η_sd, δ)
-        showup_table   = [showup_table, table(showup_hat_cml)]
-
-
-        if(small_sample_dummy==1)
-            global close
-            showup_table   = [showup_table, table(close)]
-            writetable(showup_table, [tempfolder 'MATLAB_showuphat_small_sample.csv'])
-
-        else
-
-            # Column 7: 3 extra km
-            load_data(sample,small_sample_dummy)
-            global totcost_pc totcost_3k_pc close
-            totcost_pc = (1-close).*totcost_3k_pc + close.*totcost_pc
-            [ showup_hat_km3 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
-            showup_table   = [showup_table, table(showup_hat_km3)]
-
-            # Column 8: 6 extra km
-            load_data(sample,small_sample_dummy)
-            global totcost_pc totcost_6k_pc close
-            totcost_pc = (1-close).*totcost_6k_pc + close.*totcost_pc
-            [ showup_hat_km6 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
-            showup_table   = [showup_table, table(showup_hat_km6)]
-
-            # Column 9: 3x waiting time
-            load_data(sample,small_sample_dummy)
-            global totcost_pc hhsize close ave_waiting wagerate
-            totcost_pc = totcost_pc + (1-close).*(2.*ave_waiting.*wagerate)./(hhsize.*60)
-            [ showup_hat_3aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
-            showup_table   = [showup_table, table(showup_hat_3aw)]
-
-            # Column 10: 6x waiting time
-            load_data(sample,small_sample_dummy)
-            global totcost_pc hhsize close ave_waiting wagerate
-            totcost_pc = totcost_pc + (1-close).*(5.*ave_waiting.*wagerate)./(hhsize.*60)
-            [ showup_hat_6aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
-            showup_table   = [showup_table, table(showup_hat_6aw)]
-
-
-            # Column 11-12 α=0 (all-unsophisticated) and α=1 (all sophisticated)
-            load_data(sample,small_sample_dummy)
-            [ showup_hat_α0 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 0, λ_con_bel, λ_β_bel, η_sd, δ)
-            showup_table   = [showup_table, table(showup_hat_α0)]
-
-            [ showup_hat_α1 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 1, λ_con_bel, λ_β_bel, η_sd, δ)
-            showup_table   = [showup_table, table(showup_hat_α1)]
-
-            writetable(showup_table, [tempfolder 'MATLAB_showuphat.csv'])
-        end
-
-    end
-end
+# function counterfactuals_1()
+#     ##################
+#     # fixed parameters
+#     ##################
+#
+#     η_sd = 0.275
+#     irate = 1.22
+#     danual = 1/irate
+#     irm    = 1/irate
+#     δ = danual*(1 + irm + irm^2 + irm^3 + irm^4 + irm^5)
+#
+#     ##################
+#     # Input parameters manually
+#     # these are the baseline estimated parameters (danual = 1/irate)
+#     ##################
+#
+#     μ_ϵ       = -79681
+#     σ_ϵ       = 59715
+#     α         = 0.5049
+#     λ_con_bel = 8.0448
+#     λ_β_bel   = -0.71673
+#
+#     # full sample
+#     sample = []
+#
+#     for small_sample_dummy = 0:1
+#
+#         # load full data
+#         load_data(sample,small_sample_dummy)
+#         global hhid quant_idx
+#
+#         # Column 1 is showup, Column 2 is showuphat
+#         [ showup_hat, ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#         showup_table   = [table(hhid), table(quant_idx), table(showup_hat)]
+#
+#         # Column 3 Half Standard Deviation of epsilon
+#         [ showup_hat_halfsd , ~ ] = showuphat(μ_ϵ, σ_ϵ/2, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#         showup_table   = [showup_table, table(showup_hat_halfsd)]
+#
+#         # Column 4 No epsilon variance
+#         [ showup_hat_noeps , ~ ] = showuphat(μ_ϵ, σ_ϵ/1e10, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#         showup_table   = [showup_table, table(showup_hat_noeps)]
+#
+#         ### replace travel cost by same travel cost
+#         global totcost_smth_pc totcost_pc
+#         totcost_pc = totcost_smth_pc ##ok<NASGU>
+#
+#         # Column 5 no differential travel cost
+#         [ showup_hat_smthc , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#         showup_table   = [showup_table, table(showup_hat_smthc)]
+#
+#         ### reload data, and assume constanta MU and λ
+#         load_data(sample,small_sample_dummy)
+#         mean_mu = 0.0967742 # mean benefit receipt conditional on applying
+#
+#         global μ_con_true μ_β_true FE FE2
+#         λ_con_bel_cml = norminv(mean_mu)
+#         λ_β_bel_cml = 0
+#         μ_con_true = norminv(mean_mu)
+#         μ_β_true = 0
+#         FE = FE*0
+#         FE2 = FE2*0
+#
+#         # Column 6 (constant mu AND λ, update from the previous draft)
+#         [ showup_hat_cml  , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel_cml, λ_β_bel_cml, η_sd, δ)
+#         showup_table   = [showup_table, table(showup_hat_cml)]
+#
+#
+#         if(small_sample_dummy==1)
+#             global close
+#             showup_table   = [showup_table, table(close)]
+#             writetable(showup_table, [tempfolder 'MATLAB_showuphat_small_sample.csv'])
+#
+#         else
+#
+#             # Column 7: 3 extra km
+#             load_data(sample,small_sample_dummy)
+#             global totcost_pc totcost_3k_pc close
+#             totcost_pc = (1-close).*totcost_3k_pc + close.*totcost_pc
+#             [ showup_hat_km3 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#             showup_table   = [showup_table, table(showup_hat_km3)]
+#
+#             # Column 8: 6 extra km
+#             load_data(sample,small_sample_dummy)
+#             global totcost_pc totcost_6k_pc close
+#             totcost_pc = (1-close).*totcost_6k_pc + close.*totcost_pc
+#             [ showup_hat_km6 , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#             showup_table   = [showup_table, table(showup_hat_km6)]
+#
+#             # Column 9: 3x waiting time
+#             load_data(sample,small_sample_dummy)
+#             global totcost_pc hhsize close ave_waiting wagerate
+#             totcost_pc = totcost_pc + (1-close).*(2.*ave_waiting.*wagerate)./(hhsize.*60)
+#             [ showup_hat_3aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#             showup_table   = [showup_table, table(showup_hat_3aw)]
+#
+#             # Column 10: 6x waiting time
+#             load_data(sample,small_sample_dummy)
+#             global totcost_pc hhsize close ave_waiting wagerate
+#             totcost_pc = totcost_pc + (1-close).*(5.*ave_waiting.*wagerate)./(hhsize.*60)
+#             [ showup_hat_6aw , ~ ] = showuphat(μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel, η_sd, δ)
+#             showup_table   = [showup_table, table(showup_hat_6aw)]
+#
+#
+#             # Column 11-12 α=0 (all-unsophisticated) and α=1 (all sophisticated)
+#             load_data(sample,small_sample_dummy)
+#             [ showup_hat_α0 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 0, λ_con_bel, λ_β_bel, η_sd, δ)
+#             showup_table   = [showup_table, table(showup_hat_α0)]
+#
+#             [ showup_hat_α1 , ~ ] = showuphat(μ_ϵ, σ_ϵ, 1, λ_con_bel, λ_β_bel, η_sd, δ)
+#             showup_table   = [showup_table, table(showup_hat_α1)]
+#
+#             writetable(showup_table, [tempfolder 'MATLAB_showuphat.csv'])
+#         end
+#
+#     end
+# end
