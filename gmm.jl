@@ -36,7 +36,7 @@ Moments:
 15-16. two extreme cells in quartiles of distance -> Two moments
 17-20. λ moments -> Four moments
 """
-function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, bel_λ,
+function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, δ_mom, true_λ, bel_λ,
                          ind_λ) where {T<:Union{Float64,Int64}, D<:DataFrame}
 
     # Setup
@@ -50,7 +50,10 @@ function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, bel_λ
         far_i   = (df0.c_q .== i) .&   iszero.(df0.close)
         close_i = (df0.c_q .== i) .& .!iszero.(df0.close)
         moments[:,i]   = Δ_showup .* far_i   / sum(far_i)
-        moments[:,5+i] = Δ_showup .* close_i / sum(close_i)
+        # I do not quite understand why the MATLAB code is doing this, however,
+        # δ_mom = 0 for the main estimation, so it shouldn't affect much.
+        moments[:,5+i] = (Δ_showup .* close_i / sum(close_i)) -
+                         δ_mom * moments[:,i]
     end
 
     # 11-14: {Top, bottom tercile} x {observable, unobservable consumption}
@@ -114,11 +117,7 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     end
 
     # Trapezoidal rule w/ uniform grid
-    showup_hat = -(util(lb) + util(ub))
-    for η_i in range(lb, stop=ub, length=N_grid)
-        showup_hat += 2*util(η_i)
-    end
-    showup_hat *= 0.5 * (ub-lb) / 100
+    showup_hat = trapz(util, lb, ub, N_grid)
 
     # Rather than running probit, apply WLS.
     # Calculate inverse of mu Phi(-1)(mu), where Phi is standard normal CDF
@@ -181,7 +180,7 @@ function GMM_problem(df0::DataFrame, danual::T; δ_mom::T = 0.0, irate::T = 1.22
                                           λ_con_true, λ_β_true)
         true_λ    = cdf.(Normal(), λ_con_true   .+ λ_β_true   .* df1.logc)
         bel_λ  = cdf.(Normal(), t[4] .+ t[5] .* df1.logc)
-        return compute_moments(df1, showup_hat, true_λ, bel_λ, induced_λ)
+        return compute_moments(df1, showup_hat, δ_mom, true_λ, bel_λ, induced_λ)
     end
     function gAg(x::Vector{F64}, A::Matrix{F64})
         g_eval = mean(g(x, df), dims=1)
@@ -233,10 +232,12 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
     # Run three estimations with varying discount factors
     if run_estimation
         for δ_y in [1/irate, 0.5, 0.95]
+            println("\nEstimating discount factor: ", δ_y)
+            println("------------------------------------------------")
             min_t = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
                                 η_sd = η_sd, VERBOSE = VERBOSE)
             println("Estimated parameters are: ", min_t)
-            CSV.write("output/MATLAB_est_d$(round(δ_y * 100)).csv",
+            CSV.write("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv",
                       Tables.table(min_t))
         end
     end
