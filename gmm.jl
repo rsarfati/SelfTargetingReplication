@@ -194,12 +194,12 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
     ub1 = [ 200000, 200000, 0.999,  20,  1]
 
     ### GMM: First Step (Initial values nabbed from Matlab)
-    println("First Stage: (takes approx. 1 min)")
+    println("Running First Stage... (approx. 1 min)")
     W0 = Matrix{Float64}(I, N_m, N_m)
     t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
                             Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
     # GMM: Second stage
-    println("Second stage: (takes approx. 1 min)")
+    println("Running Second Stage... (approx. 1 min)")
     g1 = g(t1, df)
     Om = inv(g1' * g1 / N)
     return minimizer(optimize(x -> gAg(x, Om), lb1, ub1, t1, NelderMead(),
@@ -236,19 +236,17 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
     if run_bootstrap
         # Bootstrap SEs
         N    = size(df, 1) # No. of households
-        δ_y  = 1 / irate # alternatives: danual = 0.50 and = 0.95.
-        N_p  = 5
-        N_m  = 20  # number of moments
-        n_bs = 100 # Number of bootstrap iterations
-
-        θ_bs = zeros(n_bs, N_p)
-        for it=1:n_bs
+        N_p  = 5   # No. of parameters to estimate
+        N_bs = 100 # No. of bootstrap iterations
+        δ_y  = 1 / irate # alt: danual = 0.50 and = 0.95.
+        θ_bs = zeros(N_bs, N_p)
+        for it=1:N_bs
             println("Bootstrap iteration: $it")
             println("------------------------")
             # Randomly draw households (with replacement)
             idx_bs     = sample(1:N, N; replace = true)
             df_bs      = df[idx_bs,:]
-            θ_bs[it,:] = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
+            θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate = irate,
                                      η_sd = η_sd, VERBOSE = false)
             # Write output so far (overwrite)
             CSV.write("output/MATLAB_bs_$(round(δ_y * 100)).csv", Tables.table(θ_bs))
