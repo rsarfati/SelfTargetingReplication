@@ -216,7 +216,7 @@ Output: MATLAB_est_d**.csv
 """
 function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = false,
                       run_estimation = false, run_bootstrap = false,
-                      output_tables = true, N_bs = 100)
+                      output_table = true, N_bs = 100)
     # Load + organize data
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     df = insertcols!(df, :logc => log.(df.consumption))
@@ -226,6 +226,9 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
 
     # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
     df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
+
+    N    = size(df, 1) # No. of households
+    N_p  = 5           # No. of parameters to estimate
 
     # Run three estimations with varying discount factors
     if run_estimation
@@ -239,8 +242,6 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
     end
     # Bootstrap SEs
     if run_bootstrap
-        N    = size(df, 1) # No. of households
-        N_p  = 5           # No. of parameters to estimate
         δ_y  = 1 / irate   # Alt: danual = 0.50 and = 0.95.
         θ_bs = zeros(N_bs, N_p)
         it   = 1
@@ -248,8 +249,8 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
             println("\nBootstrap iteration: $it")
             println("------------------------")
             # Randomly draw households (with replacement)
-            idx_bs     = sample(1:N, N; replace = true)
-            df_bs      = df[idx_bs,:]
+            idx_bs = sample(1:N, N; replace = true)
+            df_bs  = df[idx_bs,:]
             try
                 θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate = irate,
                                          η_sd = η_sd, VERBOSE = false)
@@ -265,10 +266,10 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
             end
         end
     end
-    if output_tables
+    if output_table
         δ_y   = 1 / irate
-        t_est = CSV.read("output/MATLAB_est_d$(round(δ_y * 100)).csv")
-        θ_bs  = CSV.read("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
+        t_est = CSV.read("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv", DataFrame, header=true)
+        θ_bs  = CSV.read("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv", DataFrame, header=true)
         bs_SE = [std(θ_bs[:,i]) for i=1:N_p]
 
         # Directly write LaTeX table
@@ -276,8 +277,8 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
         write(io, "\\begin{tabular}{ccccc}\\toprule" *
                   "\$\\nu_{\\epsilon}\$ & \$\\sigma_{\\epsilon}\$ &" *
                   " \$\\alpha\$ & \$\\gamma\$ & \$\\pi\$ \\\\ \\midrule")
-        @printf(io, " %5i &  %5i & %0.2f & % 0.2fi & %0.2f \\\\", t_est...)
-        @printf(io, "(%4i) & (%5i) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", bs_SE...)
+        @printf(io, " %d &  %d & %0.2f & % 0.2f & %0.2f \\\\", t_est[:,1]...)
+        @printf(io, "(%d) & (%d) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", bs_SE...)
         write(io, "\\bottomrule\\end{tabular}")
         close(io)
     end

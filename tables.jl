@@ -378,10 +378,332 @@ end
 ###########################
 # Table 8: Estimated Parameters from 2 stage GMM (415)
 ###########################
+function table_8()
+    irate = 1.22
+    δ_y   = 1 / irate
+    run_estimation = !isfile("output/MATLAB_est_d$(round(δ_y * 100)).csv")
+    run_bootstrap  = !isfile("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
+    estimation_1(; run_estimation = run_estimation, run_bootstrap = run_bootstrap,
+                   output_table = true)
+end
 
 ###########################
 # Table 9: Modeled effects of time and distance costs on show-up rates (416)
 ###########################
+function table_9()
+    irate = 1.22
+    δ_y   = 1 / irate
+    run_estimation = !isfile("output/MATLAB_est_d$(round(δ_y * 100)).csv")
+    run_bootstrap  = !isfile("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
+    estimation_1(; run_estimation = run_estimation, run_bootstrap = run_bootstrap,
+                   output_table = true)
+end
+# ******** Table 9 (smallsample==0)/Appendix Table C19 (smallsample==1)
+#
+# ******** Data set-up, interactions
+
+# /*if(`smallsample'==0){
+# 	rename showup_hat_alpha0 showup_hat_a0
+# 	rename showup_hat_alpha1 showup_hat_a1
+# }*/
+# keep closesubtreatment consumption logc showup showup_hat showup_hat_halfsd ///
+#      showup_hat_noeps showup_hat_smthc showup_hat_cml hhid hhea *poverty*
+#
+# cap drop *sig?
+# rename closesubtreatment close
+#
+# * gen RHS vars
+# gen logc=log(consumption)
+# gen close_logc = close*logc
+# la var close "Close"
+# la var logc "Log PCE"
+# la var close_logc "Close * Log PCE"
+# g closepoor = close*verypoor_povertyline1
+# g poor = verypoor_povertyline1
+# g showup_b = showup
+#
+#
+# ******** Row names for table
+# so hhid
+# g col_names = "Close" in 1
+# replace col_names = "Log per capita expenditure" in 3
+# replace col_names = "Close * Log per capita expenditure" in 5
+# replace col_names = "N" in 7
+# replace col_names = "P-value" in 8
+# replace col_names = "Above poverty line, far" in 10
+# replace col_names = "Above poverty line, close" in 11
+# replace col_names = "Below poverty line, far" in 12
+# replace col_names = "Below poverty line, close" in 13
+# replace col_names = "Poor to rich ratio, far" in 15
+# replace col_names = "Poor to rich ratio, close" in 17
+# replace col_names = "Difference of ratios" in 19
+# replace col_names = "P-value" in 20
+#
+#
+#
+#
+#
+# ******** Panel A (Logistic Regressions) and Panel C (Show-Up Rate Ratios) for Column 1a, empirical results
+# sort hhid
+# * Show-up
+# g col_showup_a = .
+# g sig_showup_a = .
+# logit showup close logc close_logc, cluster(hhea)
+# 	matrix b = e(b)
+# 	replace col_showup_a = b[1,1] in 1
+# 	replace col_showup_a = b[1,2] in 3
+# 	replace col_showup_a = b[1,3] in 5
+# 	replace col_showup_a = _se[close] in 2
+# 	replace col_showup_a = _se[logc] in 4
+# 	replace col_showup_a = _se[close_logc] in 6
+# 	replace col_showup_a = `e(N)' in 7
+# 	local Z1 = _b[close]/_se[close]
+# 	local Z3 = _b[logc]/_se[logc]
+# 	local Z5 = _b[close_logc]/_se[close_logc]
+# 	forv x = 1(2)5 {
+# 		replace sig_showup_a = 2*(1-normal(abs(`Z`x''))) in `x'
+# 		}
+# reg showup poor close closepoor, cluster(hhea)
+# 	** Ratio of poor to rich showup rate in far treatment
+# 	nlcom ((_b[_cons] + _b[poor]) / _b[_cons])
+# 	matrix bb = r(b)
+# 	replace col_showup_a = bb[1,1] in 15
+# 	matrix vv = r(V)
+# 	replace col_showup_a = (vv[1,1])^(1/2) in 16
+# 	** Ratio of poor to rich showup rate in close treatment
+# 	nlcom ((_b[_cons] + _b[poor] + _b[close] + _b[closepoor]) / (_b[_cons] + _b[close]))
+# 	matrix bb = r(b)
+# 	replace col_showup_a = bb[1,1] in 17
+# 	matrix vv = r(V)
+# 	replace col_showup_a = (vv[1,1])^(1/2) in 18
+# 	**Difference in ratios
+# 	nlcom  ((_b[_cons] + _b[poor]) / _b[_cons]) - ((_b[_cons] + _b[poor] + _b[close] + _b[closepoor]) / (_b[_cons] + _b[close]))
+# 	matrix bb = r(b)
+# 	replace col_showup_a = bb[1,1] in 19
+# 	matrix vv = r(V)
+# 	replace col_showup_a = (vv[1,1])^(1/2) in 20
+# g col_showup_b = col_showup_a		// standard errors will be replaced
+# g sig_showup_b = .
+#
+#
+# ******** Expand data for simulation
+#
+# sort hhid
+# g id = _n
+# compress
+# expand `expansion'
+# bys id: g subid = _n
+#
+# ******** Estimates, Panel A & C, for 6 simulations
+#
+#
+# foreach v of varlist showup_hat* {
+#
+# ***Prepare
+# 	g col_`v' = .
+# 	g sig_`v' = .
+# 	cap g `v'_prop = round(`expansion'*`v')
+# 	cap g `v'_sim = (subid<=`v'_prop) if `v'_prop<.
+#
+# ***Logits, Panel A
+# 	if(`smallsample'==0){
+# 		version 9: logit `v'_sim close logc close_logc, cluster(hhea)
+# 	}
+# 	else{ // smallsample==1
+# 		version 9: logit `v'_sim close logc close_logc, cluster(hhea)
+# 	}
+# 		est sto `v'_sim
+# 		matrix b = e(b)
+# 		replace col_`v' = b[1,1] if id==1
+# 		replace col_`v' = b[1,2] if id==3
+# 		replace col_`v' = b[1,3] if id==5
+# 		replace col_`v' = `e(N)' if id==7
+#
+# ****Ratios from panel C
+# 	reg `v'_sim poor close closepoor, cluster(hhea)
+# 	**Ratio poor to rich in far
+# 	nlcom ((_b[_cons] + _b[poor]) / _b[_cons])
+# 	matrix bb = r(b)
+# 	replace col_`v' = bb[1,1] if id==15
+# 	** Ratio of poor to rich showup rate in close treatment
+# 	nlcom ((_b[_cons] + _b[poor] + _b[close] + _b[closepoor]) / (_b[_cons] + _b[close]))
+# 	matrix bb = r(b)
+# 	replace col_`v' = bb[1,1] if id==17
+# 	**Difference in ratios
+# 	nlcom  ((_b[_cons] + _b[poor]) / _b[_cons]) - ((_b[_cons] + _b[poor] + _b[close] + _b[closepoor]) / (_b[_cons] + _b[close]))
+# 	matrix bb = r(b)
+# 	replace col_`v' = bb[1,1] if id==19
+#
+# drop `v'_sim `v'_prop
+# }
+#
+#
+#
+#
+# ******** Back to one observation
+#
+# pause off
+# bys hhid: keep if _n==1
+# isid hhid
+#
+# ******** Panel B for all columns
+#
+# g showup_a = showup
+# sort verypoor_povertyline1 close
+# egen pline_close = group(verypoor_povertyline1 close)
+# label define pline_close 1 "Above Poverty Line, Far" 2 "Above Poverty Line, Close" 3 "Below Poverty Line, Far" 4 "Below Poverty Line, Close", replace
+# la val pline_close pline_close
+# sort hhid
+# foreach v of varlist showup_a showup_b showup_hat* {
+# forv x = 1/4 {
+# summ `v' if pline_close==`x'
+# local y = `x'+9
+# replace col_`v' = `r(mean)'*100 in `y'
+# }
+# }
+#
+#
+#
+#
+# ******** Manual BS standard errors for simulations and empirical, 1b
+#
+# pause off
+#
+# qui foreach v of varlist showup_b showup_hat* {
+# * Set up
+# g a`v'_bclose = .
+# g a`v'_blogc = .
+# g a`v'_bcloselog = .
+# g a`v'_ratfarSE = .
+# g a`v'_ratcloseSE = .
+# g a`v'_diffSE = .
+#
+# * Logits, panel A
+# local a = 0
+# forv x = 1/`bootstrapruns' {
+# 	local a = `a' + 1
+# 	cap drop `v'_sim
+# 	preserve
+# 		bsample, cluster(hhea)
+# 		sort hhid
+# 		g rand = uniform()
+# 		g `v'_sim = (rand < `v')
+# 		noi di "`a' -- `v', logit SE"
+# 		version 10: logit `v'_sim close logc close_logc, cluster(hhea)
+# 		matrix b = e(b)
+#
+# 	restore
+# 	sort hhid
+# 	replace a`v'_bclose = b[1,1] in `a'
+# 	replace a`v'_blogc = b[1,2] in `a'
+# 	replace a`v'_bcloselog = b[1,3] in `a'
+# 	}
+# sort hhid
+# summ a`v'_bclose
+# replace col_`v' = `r(sd)' in 2
+# if `r(mean)' < 0 {
+# 	count if a`v'_bclose > 0 & a`v'_bclose < .
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 1
+# 	}
+# else {
+# 	count if a`v'_bclose < 0
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 1
+# 	}
+# summ a`v'_blogc
+# replace col_`v' = `r(sd)' in 4
+# if `r(mean)' < 0 {
+# 	count if a`v'_blogc > 0 & a`v'_blogc < .
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 3
+# 	}
+# else {
+# 	count if a`v'_blogc < 0
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 3
+# 	}
+# summ a`v'_bcloselog
+# replace col_`v' = `r(sd)' in 6
+# if `r(mean)' < 0 {
+# 	count if a`v'_bcloselog > 0 & a`v'_bcloselog < .
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 5
+# 	}
+# else {
+# 	count if a`v'_bcloselog < 0
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 5
+# 	}
+#
+#
+# * Ratios, panel C
+# local a = 0
+# forv x = 1/`bootstrapruns' {
+# 	local a = `a' + 1
+# 	cap drop `v'_sim
+# 	preserve
+# 		bsample, cluster(hhea)
+# 		sort hhid
+# 		g rand = uniform()
+# 		g `v'_sim = (rand < `v')
+# 		noi di "`a' -- `v', ratios SE"
+# 		reg `v'_sim poor close closepoor, cluster(hhea)
+# 		local bb1 = ((_b[_cons] + _b[poor]) / _b[_cons])
+# 		local bb2 = ((_b[_cons] + _b[poor] + _b[close] + _b[closepoor]) / (_b[_cons] + _b[close]))
+# 		local bb3 =  ((_b[_cons] + _b[poor]) / _b[_cons]) - ((_b[_cons] + _b[poor] + _b[close] + _b[closepoor]) / (_b[_cons] + _b[close]))
+# 	restore
+# 	sort hhid
+# 	pause
+# 	replace a`v'_ratfarSE = `bb1' in `a'
+# 	replace a`v'_ratcloseSE = `bb2' in `a'
+# 	replace a`v'_diffSE = `bb3' in `a'
+# 	}
+# sort hhid
+# summ a`v'_ratfarSE
+# replace col_`v' = `r(sd)' in 16
+# summ a`v'_ratcloseSE
+# replace col_`v'  = `r(sd)' in 18
+# summ a`v'_diffSE
+# replace col_`v' = `r(sd)' in 20
+# if `r(mean)' < 0 {
+# 	count if a`v'_diffSE > 0 & a`v'_diffSE!=.
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 19
+# 	}
+# else {
+# 	count if a`v'_diffSE < 0
+# 	replace sig_`v' = `r(N)'*2/`bootstrapruns' in 19
+# 	}
+# }
+#
+#
+# ******** P-values
+# foreach v of varlist showup_hat* {
+# local a = (col_`v'[5] - col_showup_b[5])/(((col_`v'[6])^2 + (col_showup_b[6])^2)^.5)
+# replace col_`v' = 2*(1-normal(abs(`a'))) in 8
+# local a = (col_`v'[19] - col_showup_b[19])/(((col_`v'[20])^2 + (col_showup_b[20])^2)^.5)
+# replace col_`v' = 2*(1-normal(abs(`a'))) in 21
+# }
+#
+#
+# ******** Asterisks & rounding
+#
+#  foreach v of varlist showup_a showup_b showup_hat* {
+# replace col_`v' = round(col_`v',.001)
+# tostring col_`v', replace force format(%11.3f)
+# replace col_`v' = col_`v' + "*" if sig_`v' < .1
+# replace col_`v' = col_`v' + "*" if sig_`v' < .05
+# replace col_`v' = col_`v' + "*" if sig_`v' < .01
+# foreach n in 2 4 6 16 18 20 {
+# 	replace col_`v' = "(" + col_`v' + ")" in `n'
+# 	}
+# }
+#
+#
+# ******** Save
+#
+# 	if(`smallsample'==0){
+# 		outsheet col_* in 1/21 using "tables\Table 9.csv", replace comma
+# 	}
+# 	else{
+# 		outsheet col_* in 1/21 using "tables\Online Appendix C19.csv", replace comma
+# 	}
+#
+# }
 
 ###########################
 # Table 10: Impact of alternative testing approaches on poverty gap (424)
