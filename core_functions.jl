@@ -54,6 +54,20 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
 end
 
 """
+Trapezoidal integration w/ uniform grid!
+"""
+function trapz(f::Function, a::F64, b::F64, N_g::Int64)
+    integ = f(a) + f(b)
+    h = (b-a) / N_g
+    x = a
+    for j = 2:N_g
+        x     += h
+        integ += 2 * f(x)
+    end
+    return integ * h / 2
+end
+
+"""
 ```
 bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
 ```
