@@ -7,7 +7,7 @@ Computes quantiles of variables in inputted dictionary, and puts the associated
 categorical labels into dataframe for series. Default inputs are obs. consumption,
 PMT, unobs. consumption (w), distance
 
-Corresponds to `load_data.m` file in replication code.
+Corresponds roughly to `load_data.m` file in replication code.
 """
 function compute_quantiles(df::DataFrame; N_q = Dict([:c, :pmtscore,
                                        :unobs_cons, :distt] .=> [5, 3, 3, 4]))
@@ -15,10 +15,7 @@ function compute_quantiles(df::DataFrame; N_q = Dict([:c, :pmtscore,
     quant(N::Int64)     = [n/N for n=1:N-1]
     assign_q(x, quants) = [minimum(vcat(findall(>=(x[i]), quants),
                                         length(quants)+1)) for i=1:length(x)]
-    # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
-    !("unobs_cons" in names(df)) && insertcols!(df, :unobs_cons =>
-                            residuals(reg(df, @formula(log_c ~ pmtscore)), df))
-    # Assign categorical IDs for quantiles
+    # Assign categoricals for quantiles
     for v in keys(N_q)
         v_n = Symbol(string(v) * "_q")
         insertcols!(df, v_n => assign_q(df[:,v], quantile(df[:,v], quant(N_q[v]))))
@@ -42,42 +39,38 @@ Moments:
 function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, bel_λ,
                          ind_λ) where {T<:Union{Float64,Int64}, D<:DataFrame}
 
-    # Initialize dictionary, manage NaNs in data
+    # Setup
     N        = length(showup_hat)
     moments  = Matrix{F64}(undef, N, 20)
-    showup   = (df0.showup .== 1) .& .!ismissing.(df0.showup)
     Δ_logc   = df0.log_c .- mean(df0.log_c)
-    Δ_showup = showup - showup_hat
+    Δ_showup = df0.showup - showup_hat
 
-    # 1-10 Far/close subtreatment x i=1:5th quintile of consumption
+    # 1-10: Far/close subtreatment x i=1:5th quintile of consumption
     for i=1:5
         far_i   = (df0.c_q .== i) .&   iszero.(df0.close)
         close_i = (df0.c_q .== i) .& .!iszero.(df0.close)
-
         moments[:,i]   = Δ_showup .* far_i   / sum(far_i)
         moments[:,5+i] = Δ_showup .* close_i / sum(close_i)
     end
 
-    # 11-14 {Top, bottom tercile} x {observable, unobservable consumption}
+    # 11-14: {Top, bottom tercile} x {observable, unobservable consumption}
     for (i, Q) in enumerate([[3,1], [3,3], [1,1], [1,3]])
         idx = (df0.pmtscore_q .== Q[1]) .& (df0.unobs_cons_q .== Q[2])
-
         moments[:,10 + i] = Δ_showup .* idx / sum(idx)
     end
 
-    # 15-16 Top and bottom distance quartiles
+    # 15-16: Top and bottom distance quartiles
     T_D = (df0.distt_q .== 4)
     B_D = (df0.distt_q .== 1)
-
     moments[:,15] =  Δ_showup .* T_D / sum(T_D)
     moments[:,16] =  Δ_showup .* B_D / sum(B_D)
 
-    # 17-20 Mean λ function moments
-    N_show        = sum(showup)
-    moments[:,17] = (bel_λ .- df0.getbenefit)           .* showup / N_show
-    moments[:,18] = (bel_λ .- df0.getbenefit) .* Δ_logc .* showup / N_show
-    moments[:,19] = (ind_λ .- df0.getbenefit)           .* showup / N_show
-    moments[:,20] = (ind_λ .- df0.getbenefit) .* Δ_logc .* showup / N_show
+    # 17-20: Mean λ function moments
+    N_show        = sum(df0.showup)
+    moments[:,17] = (bel_λ .- df0.getbenefit)           .* df0.showup / N_show
+    moments[:,18] = (bel_λ .- df0.getbenefit) .* Δ_logc .* df0.showup / N_show
+    moments[:,19] = (ind_λ .- df0.getbenefit)           .* df0.showup / N_show
+    moments[:,20] = (ind_λ .- df0.getbenefit) .* Δ_logc .* df0.showup / N_show
 
     # If showup hat exactly zero, the λ moments are NaN; replace w/ large number
     moments[isnan.(moments)] .= 10000.
@@ -101,7 +94,7 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     β  = 1 ./ s
 
     # Lower and upper bound, grid density for the numerical integration over eta
-    lb = -η_sd*4
+    lb = -η_sd * 4
     ub = -lb
 
     function util(η::F64)
@@ -112,20 +105,20 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
         relu_2mor = (df.c .* exp.(-η) .+ df.benefit) - (df.c .* exp.(-η))
 
         Mu = cdf.(Normal(), μ_con_true .+ df.FE2 .+ μ_β_true * (df.pmtscore .- η))
-        Λ  = cdf.(Normal(), λ_con_bel .+ λ_β_bel * (log.(df.c) .- η))
+        Λ  = cdf.(Normal(), λ_con_bel  .+ λ_β_bel * (log.(df.c) .- η))
 
         prob_s = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ αa)))
         prob_u = (1 .- 1 ./ (1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Λ  .* relu_2mor) .+ αa)))
 
         return (α * prob_s + (1 - α) * prob_u) .* pdf.(Normal(0, η_sd), η)
     end
-    # Gaussian quadrature with Legendre orthofonal polynomials
-    # showup_hat = -(util(lb) + util(ub))
-    # for η_i in range(lb, stop=ub, length=N_grid)
-    #     showup_hat += 2*util(η_i)
-    # end
-    # showup_hat *= 0.5 * (ub-lb) / 100
-    showup_hat, _ = quadgk(util, lb, ub, rtol=1e-4)
+
+    # Trapezoidal rule w/ uniform grid
+    showup_hat = -(util(lb) + util(ub))
+    for η_i in range(lb, stop=ub, length=N_grid)
+        showup_hat += 2*util(η_i)
+    end
+    showup_hat *= 0.5 * (ub-lb) / 100
 
     # Rather than running probit, apply WLS.
     # Calculate inverse of mu Phi(-1)(mu) where Phi is standard normal CDF
@@ -136,10 +129,9 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     X         = hcat(const_t, logcons_t)
     sigma2    = sqrt(sum(((Matrix{F64}(I, N, N) - X / (X' * X) * X') * muinv_t) .^ 2) / (N - 2))
     coef      = 1 / sigma2 * (X' * X) \ X' * muinv_t # Divide by sigma to impose sd=1 for error
+    ind_λ     = cdf.(Normal(), hcat(ones(N), df.log_c) * coef)
 
-    induced_λ = cdf.(Normal(), hcat(ones(N), df.log_c) * coef)
-
-    return showup_hat, induced_λ
+    return showup_hat, ind_λ
 end
 
 """
@@ -169,7 +161,7 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
     λ_β_true   = df0.reg_nofe_logcon[1]
 
     df = df0[:, [:totcost_pc, :moneycost, :c, :log_c, :distt, :pmtscore,
-                :FE2, :getbenefit, :benefit, :showup, :close]]
+                :FE2, :getbenefit, :benefit, :showup, :close, :unobs_cons]]
     df = compute_quantiles(df)
 
     N   = size(df, 1) # No. of households
@@ -195,26 +187,21 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
         return (g_eval * A * g_eval')[1]
     end
 
-    ### GMM: First Step (Initial values nabbed from Matlab)
-    lb1 = [-200000,     0,  0.001,  0, -2]
-    ub1 = [ 200000, 200000, 0.999, 20,  1]
-
     # Julia's Optim package explores different starting values by default!
     # Thus will just start at mean of MATLAB code initial guesses
-    t0 = [-79700, 59700, 0.5, 8.04, -0.72]
+    t0  = [-79700,  59700,   0.5, 8.04, -0.72]
+    lb1 = [-200000,     0,  0.001,   0, -2]
+    ub1 = [ 200000, 200000, 0.999,  20,  1]
 
+    ### GMM: First Step (Initial values nabbed from Matlab)
     println("First Stage: (takes approx. 1 min)")
-    # Begin with identity weighting matrix
     W0 = Matrix{Float64}(I, N_m, N_m)
     t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
                             Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
-    @show t1
     # GMM: Second stage
+    println("Second stage: (takes approx. 1 min)")
     g1 = g(t1, df)
     Om = inv(g1' * g1 / N)
-
-    # Return final theta
-    println("Second stage: (takes approx. 1 min)")
     return minimizer(optimize(x -> gAg(x, Om), lb1, ub1, t1, NelderMead(),
                               Optim.Options(g_tol=1e5, show_trace = VERBOSE)))
 end
@@ -226,62 +213,46 @@ Output: MATLAB_Estimates_main_d**.csv
 ** corresponds to the value of the annual discount factor:
    d=0.82 = 1/irate, d=0.50 or d=0.95
 """
-function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0,
-                        bootstrap_only = false, VERBOSE = false)
-    # Load data
+function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = false,
+                      run_estimation = false, run_bootstrap = false)
+    # Load + organize data
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
-    insertcols!(df, :log_c => log.(df.consumption))
-    rename!(df, [:closesubtreatment => :close, :consumption => :c])
-    clean(df, [:log_c, :close, :getbenefit, :pmtscore, :distt, :c], F64)
+    df = insertcols!(df, :log_c => log.(df.consumption))
+    df = rename!(df, [:closesubtreatment => :close, :consumption => :c])
+    df = clean(df, [:log_c, :close, :getbenefit, :pmtscore, :distt, :c], F64)
+
+    # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
+    df = insertcols!(df, :unobs_cons => residuals(reg(df, @formula(log_c ~ pmtscore)), df))
 
     # Run three estimations with varying discount factors
-    if !bootstrap_only
-        for d_annual in [1/irate, 0.5, 0.95]
-            min_t = GMM_problem(df, d_annual; δ_mom = δ_mom, irate = irate,
+    if run_estimation
+        for δ_y in [1/irate, 0.5, 0.95]
+            min_t = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
                                 η_sd = η_sd, VERBOSE = VERBOSE)
-            temp     = round(d_annual*100)
             @show min_t
-            CSV.write("output/MATLAB_Estimates_main_d$temp.csv", Tables.table(min_t))
+            CSV.write("output/MATLAB_est_d$(round(δ_y * 100)).csv", Tables.table(min_t))
         end
     end
+    if run_bootstrap
+        # Bootstrap SEs
+        N    = size(df, 1) # No. of households
+        δ_y  = 1 / irate # alternatives: danual = 0.50 and = 0.95.
+        N_p  = 5
+        N_m  = 20  # number of moments
+        n_bs = 100 # Number of bootstrap iterations
 
-    # Standard errors // run bootstrapping.m
-    # Input:  MATLAB_Input.csv
-    # Output: bootstrap_**\bootstrap_[something]_d**.csv files
-    N  = size(df, 1) # No. of households
-    danual = 1/irate # alternatives: danual = 0.50 and = 0.95.
-    N_m    = 20  # number of moments
-    n_boot = 100 # Number of bootstrap iterations
-    N_init = 50  # Number of N_init (initial conditions) per iteration
-
-    # store bootstrap subsample, estimated parameters, weighting matrices,
-    # and all N_init for each iteration
-    boot_samples  = zeros(n_boot, N)
-    θ_boots       = zeros(n_boot, N_m)
-    weight_matrix = zeros(n_boot * N_m, N_m)
-    θ_boots_all   = zeros(n_boot * N_init, N_m)
-
-    for it=1:n_boot
-        # Randomly draw households (with replacement) for bootstrap
-        boot_sample        = sample(1:N, N, true)
-        boot_samples[it,:] = boot_sample # Save sample
-
-        W, p_all = GMM_problem(δ_mom, danual, irate, η_sd, N_init, boot_sample)
-
-        Fval_ss       = p_all[:, 17]
-        minindex      = argmin(Fval_ss)
-        θ_boots[it,:] = p_all[minindex,:]
-        θ_boots_all[   (it-1) * N_init + (1:N_init),:] = p_all
-        weight_matrix[ (it-1) * N_m + (1:N_m),:] = W
-
-        @show "Bootstrap iteration: $i. Last iteration took $i sec."
-
-        # write output so far (overwrite)
-        temp = round(danual*100)
-        CSV.write("output/bootstrap_$(temp)_estimates.csv",     θ_boots)
-        CSV.write("output/bootstrap_$(temp)_allN_init.csv",     θ_boots_all)
-        CSV.write("output/bootstrap_$(temp)_samples.csv",       boot_samples)
-        CSV.write("output/bootstrap_$(temp)_weight_matrix.csv", weight_matrix)
+        θ_bs = zeros(n_bs, N_p)
+        for it=1:n_bs
+            println("Bootstrap iteration: $it")
+            println("------------------------")
+            # Randomly draw households (with replacement)
+            idx_bs     = sample(1:N, N; replace = true)
+            df_bs      = df[idx_bs,:]
+            θ_bs[it,:] = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
+                                     η_sd = η_sd, VERBOSE = false)
+            # Write output so far (overwrite)
+            CSV.write("output/MATLAB_bs_$(round(δ_y * 100)).csv", Tables.table(θ_bs))
+        end
     end
 end
 
