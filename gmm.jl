@@ -120,12 +120,12 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
         return (α * prob_s + (1 - α) * prob_u) .* pdf.(Normal(0, η_sd), η)
     end
     # Gaussian quadrature with Legendre orthofonal polynomials
-    showup_hat = -(util(lb) + util(ub))
-    for η_i in range(lb, stop=ub, length=N_grid)
-        showup_hat += 2*util(η_i)
-    end
-    showup_hat *= 0.5 * (ub-lb) / 100
-    #showup_hat, err = quadgk(util, lb, ub, rtol=1e-4)
+    # showup_hat = -(util(lb) + util(ub))
+    # for η_i in range(lb, stop=ub, length=N_grid)
+    #     showup_hat += 2*util(η_i)
+    # end
+    # showup_hat *= 0.5 * (ub-lb) / 100
+    showup_hat, _ = quadgk(util, lb, ub, rtol=1e-4)
 
     # Rather than running probit, apply WLS.
     # Calculate inverse of mu Phi(-1)(mu) where Phi is standard normal CDF
@@ -191,7 +191,7 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
         return compute_moments(df1, showup_hat, true_λ, bel_λ, induced_λ)
     end
     function gAg(x::Vector{F64}, A::Matrix{F64})
-        g_eval = mean(g(x, df),dims=1)
+        g_eval = mean(g(x, df), dims=1)
         return (g_eval * A * g_eval')[1]
     end
 
@@ -199,9 +199,9 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
     lb1 = [-200000,     0,  0.001,  0, -2]
     ub1 = [ 200000, 200000, 0.999, 20,  1]
 
-    # Feed in some reasonable starting values (Julia's Optim package
-    # explores different starting values by default!)
-    t0 = [-79681, 59715, 0.5, 8.04, -0.72]
+    # Julia's Optim package explores different starting values by default!
+    # Thus will just start at mean of MATLAB code initial guesses
+    t0 = [-79700, 59700, 0.5, 8.04, -0.72]
 
     println("First Stage: (takes approx. 1 min)")
     # Begin with identity weighting matrix
