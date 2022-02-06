@@ -15,11 +15,9 @@ function compute_quantiles(df::Union{DataFrame, DataFrameRow}; N_q = Dict([:cons
     quant(N::Int64)     = [n/N for n=1:N-1]
     assign_q(x, quants) = [minimum(vcat(findall(>=(x[i]), quants),
                                         length(quants)+1)) for i=1:length(x)]
-
     # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
     !("unobs_cons" in names(df)) && insertcols!(df, :unobs_cons =>
                             residuals(reg(df, @formula(log_c ~ pmtscore)), df))
-
     # Assign categorical IDs for quantiles
     for v in keys(N_q)
         v_n = Symbol(string(v) * "_q")
@@ -45,42 +43,43 @@ function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, true_λ, belief
                          induced_λ) where {T<:Union{Float64,Int64}, D<:Union{DataFrame, DataFrameRow}}
 
     # Initialize dictionary, manage NaNs in data
-    moments = Vector{F64}(undef, 20)
+    N = length(showup_hat)
+    moments = Matrix{F64}(undef, N, 20)
     showup  = (df0.showup .== 1) .& .!ismissing.(df0.showup)
 
     # 1-10 Far/close subtreatment x i=1:5th quintile of consumption
     for i=1:5
         far_i   = (df0.consumption_q .== i) .&   iszero.(df0.close)
         close_i = (df0.consumption_q .== i) .& .!iszero.(df0.close)
-        moments[i]   = (sum(showup .* far_i)   - sum(showup_hat .* far_i))  /sum(far_i)
-        moments[5+i] = (sum(showup .* close_i) - sum(showup_hat .* close_i))/sum(close_i)
+        moments[:,i]   = (showup .* far_i   - showup_hat .* far_i)  /sum(far_i)
+        moments[:,5+i] = (showup .* close_i - showup_hat .* close_i)/sum(close_i)
     end
 
     # 11-14 {Top, bottom tercile} x {observable, unobservable consumption}
     for (i, Q) in enumerate([[3,1], [3,3], [1,1], [1,3]])
         idx = (df0.pmtscore_q .== Q[1]) .& (df0.unobs_cons_q .== Q[2])
-        moments[10 + i] = (sum(showup .* idx) - sum(showup_hat .* idx)) / sum(idx)
+        moments[:,10 + i] = (showup .* idx - showup_hat .* idx) / sum(idx)
     end
 
     # 15-16 Top and bottom distance quartiles
     T_D = (df0.distt_q .== 4)
     B_D = (df0.distt_q .== 1)
 
-    moments[15] =  (sum(showup .* T_D) - sum(showup_hat .* T_D)) / sum(T_D)
-    moments[16] =  (sum(showup .* B_D) - sum(showup_hat .* B_D)) / sum(B_D)
+    moments[:,15] =  (showup .* T_D - showup_hat .* T_D) / sum(T_D)
+    moments[:,16] =  (showup .* B_D - showup_hat .* B_D) / sum(B_D)
 
     # 17-20 Mean λ function moments
-    N_show   = sum(showup)
-    moments[17] = sum((belief_λ .- df0.getbenefit) .* showup)     / N_show
-    moments[18] = sum((belief_λ .- df0.getbenefit) .*
-                        (df0.log_c .- mean(df0.log_c)) .* showup) / N_show
-    moments[19] = sum((induced_λ .- df0.getbenefit) .* showup)    / N_show
-    moments[20] = sum((induced_λ .- df0.getbenefit) .*
-                        (df0.log_c .- mean(df0.log_c)) .* showup) / N_show
+    N_show        = sum(showup)
+    moments[:,17] = (belief_λ .- df0.getbenefit)   .* showup / N_show
+    moments[:,18] = (belief_λ .- df0.getbenefit)   .*
+                        (df0.log_c .- mean(df0.log_c)) .* showup / N_show
+    moments[:,19] = (induced_λ .- df0.getbenefit)  .* showup / N_show
+    moments[:,20] = (induced_λ .- df0.getbenefit)  .*
+                        (df0.log_c .- mean(df0.log_c)) .* showup / N_show
 
     # If showup hat exactly zero, the λ moments are NaN; replace w/ large number
     moments[isnan.(moments)] .= 10000.
-    return moments
+    return moments .* N
 end
 
 """
@@ -102,7 +101,6 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     lb = -η_sd*4
     ub = -lb
     N  = length(df.consumption)
-    @show N
 
     function util(η::F64)
         # Present Utility (Cost function adjusted bc "totalcost" is based on
@@ -210,26 +208,18 @@ function GMM_problem(df0::DataFrame, danual::F64; δ_mom = 0., irate= 1.22, η_s
     # GMM First step: begin with identity weighting matrix
     W0 = Matrix{Float64}(I, N_m, N_m)
     function gAg(x::Vector{F64}, A::Matrix{F64})
-        g_eval = g(x, df)
-        return abs.(g_eval' * A * g_eval)
+        g_eval = mean(g(x, df),dims=1)
+        return (g_eval * A * g_eval')[1]
     end
     println("First Stage: (takes approx. 1 min)")
-    #t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
-    #                        Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
-    t1 = [-61298.74693924103, 23479.892469625243, 0.5083359032616762, 2.7728175583383488, -0.3194655456909087]
+    t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
+                            Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
     @show t1
     # GMM: Second stage
     g1 = g(t1, df)
-    @show g1
-    Om = inv(g1 * g1')
+    Om = inv(g1' * g1 / N)
 
-    # F = svd(inv(g1 * g1' / N))
-    # println(F.U * Diagonal(sqrt.(F.S)))
-    #@show mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N])
-    #Om = inv(mean([g(t1, df[i,:]) * g(t1, df[i,:])' for i=1:N]))
-    println(Om)
     # Return final theta
-    return
     println("Second stage: (takes approx. 1 min)")
     return minimizer(optimize(x -> gAg(x, Om), lb1, ub1, t1, NelderMead(),
                               Optim.Options(g_tol=1e5, show_trace = VERBOSE)))
