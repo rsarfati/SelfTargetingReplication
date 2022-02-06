@@ -5,7 +5,7 @@
 
 # Base packages
 using CSV, DataFrames, Distributions, FileIO, ForwardDiff, LinearAlgebra
-using Optim, Printf, Plots, Statistics, StatFiles, StatsBase
+using Optim, Printf, Plots, Statistics, StatFiles, StatsBase, StatsFuns
 # Indulgent packages
 using FixedEffectModels, GLM, RegressionTables, QuadGK, Vcov
 using Binscatters, CategoricalArrays, CovarianceMatrices
@@ -67,12 +67,12 @@ include("tables.jl")
 include("figures.jl")
 
 ###### Tables #######
-table_1()
-table_3()
-table_4()
-table_5()
-table_6()
-table_7()
+# table_1()
+# table_3()
+# table_4()
+# table_5()
+# table_6()
+# table_7()
 
 ### Run GMM estimation
 include("gmm.jl")
@@ -82,9 +82,9 @@ include("gmm.jl")
 # table_10()
 
 ###### Figures #######
-figure_1()
-figure_2()
-figure_3()
-figure_4()
-figure_5()
-figure_6()
+# figure_1()
+# figure_2()
+# figure_3()
+# figure_4()
+# figure_5()
+# figure_6()
