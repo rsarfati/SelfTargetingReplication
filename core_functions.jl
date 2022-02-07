@@ -1,4 +1,26 @@
 """
+Shortcut identity matrix.
+"""
+function eye(N::Int64)
+    return Matrix{F64}(I, N, N)
+end
+
+"""
+Trapezoidal integration w/ uniform grid!
+"""
+function trapz(f::Function, a::F64, b::F64, N_g::Int64)
+    integ = f(a) + f(b)
+    N_g -= 1
+    h = (b-a) / N_g
+    x = a
+    for j = 2:N_g
+        x     += h
+        integ += 2 * f(x)
+    end
+    return integ * h / 2
+end
+
+"""
 ```
 function glm_clust(f::FormulaTerm, df::DataFrame, link::Link; group::Symbol=Symbol(),
                    clust::Symbol=Symbol(), wts::Vector{F64} = Vector{F64}())
@@ -51,21 +73,6 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
         return μ_r_y, FixedEffectModel(coef(r)[inds], vcov_i[inds,inds],
                           gen_fields[3:8]..., gen_fields[9][inds], gen_fields[10:end]...)
     end
-end
-
-"""
-Trapezoidal integration w/ uniform grid!
-"""
-function trapz(f::Function, a::F64, b::F64, N_g::Int64)
-    integ = f(a) + f(b)
-    N_g -= 1
-    h = (b-a) / N_g
-    x = a
-    for j = 2:N_g
-        x     += h
-        integ += 2 * f(x)
-    end
-    return integ * h / 2
 end
 
 """

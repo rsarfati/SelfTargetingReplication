@@ -10,7 +10,7 @@ PMT, unobs. consumption (w), distance
 Corresponds roughly to `load_data.m` file in replication code.
 """
 function compute_quantiles(df::DataFrame;
-                           qN = Dict([:c,:pmt,:unob_c,:distt].=>[5,3,3,4]))
+                           qN = Dict([:c,:pmt,:unob_c,:distt] .=> [5,3,3,4]))
     # Helper functions
     quant(N::Int64)     = [n/N for n=1:N-1]
     assign_q(x, quants) = [minimum(vcat(findall(>=(x[i]), quants),
@@ -87,7 +87,8 @@ showuphat(df::DataFrame, t::Vector{T}, η_sd::T, δ::T, μ_con_true::T,
 Evaluate probability of showing up for each i. (Eq 22)
 """
 function showuphat(df::DataFrame, t::Vector{T}, η_sd::T, δ::T, μ_con_true::T,
-                   μ_β_true::T, λ_con_true::T, λ_β_true::T; N_grid=100) where T<:F64
+                   μ_β_true::T, λ_con_true::T, λ_β_true::T;
+                   N_grid = 100) where T<:F64
 
     # Unpack parameters
     μ_ϵ, σ_ϵ, α, λ_con_bel, λ_β_bel = t
@@ -224,10 +225,10 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_bs = 100,
     df = clean(df, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
 
     # Compute unobs. cons (residual regressing log(cons) on PMT)
-    df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
+    df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc~pmt)), df))
     N    = size(df, 1) # No. households
     N_p  = 5           # No. parameters to estimate
-
+    pre  = "output/MATLAB"
     # Run 3 estimations with varying discount factors
     if run_estimation
         for δ_y in [1/irate, 0.5, 0.95]
@@ -236,11 +237,11 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_bs = 100,
             min_t = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
                                 η_sd = η_sd, VERBOSE = VERBOSE, f_tol = f_tol)
             println("Estimated parameters are: ", min_t)
-            CSV.write("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv",
+            CSV.write("$(pre)_est_d$(Int(round(δ_y * 100))).csv",
                       Tables.table(min_t))
         end
     end
-    
+
     # Bootstrap SEs for δ_y = 0.82 (Table 8)
     if run_bootstrap
         δ_y  = 1 / irate   # Alt: 0.50, 0.95.
@@ -252,14 +253,14 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_bs = 100,
             idx_bs = sample(1:N, N; replace = true)
             df_bs  = df[idx_bs,:]
             try
-                θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate=irate,
-                                         η_sd = η_sd, VERBOSE=false, f_tol=f_tol)
-                CSV.write("output/MATLAB_bs_$(Int(round(δ_y*100))).csv", table(θ_bs))
+                θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom=δ_mom, irate=irate,
+                                         η_sd=η_sd, VERBOSE=false, f_tol=f_tol)
+                CSV.write("$(pre)_bs_$(Int(round(δ_y*100))).csv", table(θ_bs))
                 it += 1
             catch e
                 @show e
                 if typeof(e) <: DomainError
-                    println("Domain error in estimation, running new bootstrap iteration!")
+                    println("Domain err. in estimation, restarting iteration!")
                 else
                     throw(e)
                 end
@@ -270,8 +271,10 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_bs = 100,
     # Generate LaTeX Table 8
     if output_table
         δ_y   = 1 / irate
-        t_est = CSV.read("output/MATLAB_est_d$(Int(round(δ_y*100))).csv", DataFrame, header=true)
-        θ_bs  = CSV.read("output/MATLAB_bs_$(  Int(round(δ_y*100))).csv", DataFrame, header=true)
+        t_est = CSV.read("$(pre)_est_d$(Int(round(δ_y*100))).csv",
+                         DataFrame, header=true)
+        θ_bs  = CSV.read("$(pre)_bs_$(  Int(round(δ_y*100))).csv",
+                         DataFrame, header=true)
         bs_SE = [std(θ_bs[:,i]) for i=1:N_p]
 
         # Directly write LaTeX table
