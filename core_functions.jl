@@ -36,12 +36,15 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
                    wts::Vector{F64} = Vector{F64}(), glm_kwargs = Dict())
     # Input checks
     if link == ProbitLink()
-        @assert group != Symbol() "The `group` kwarg is required for probit. Check inputs."
+        @assert group != Symbol() "The `group` keyword is required for the " *
+                                  "probit model. Check your inputs."
     end
+
     # Option to include weights for observations
     if !isempty(wts); glm_kwargs[:wts] = wts end
+
     # Specify strata for FEs in GLM.jl lingo
-    if group != Symbol(); glm_kwargs[:contrasts] = Dict(group => DummyCoding()) end
+    if group != Symbol(); glm_kwargs[:contrasts]=Dict(group=>DummyCoding()) end
 
     # Run regression
     r = glm(f, df, Binomial(), link; glm_kwargs...)
@@ -63,15 +66,15 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
     # Collect fields for automatic table production
     gen_fields = [getfield(r_fields, s) for s in fieldnames(typeof(r_fields))]
 
-    # Output conformed to type FixedEffectModel in either case, for type stability
+    # Output conformed to type FixedEffectModel in both cases, for type stability
     if link == ProbitLink() || group == Symbol()
         # Case: {Logit, Probit}
         return μ_r_y, FixedEffectModel(coef(r), vcov_i, gen_fields[3:end]...)
     else
         # Case: {Conditional Logit}
-        inds = 1:(try length(f.rhs) catch; 2 end) # Workaround in case of 1-element tuple.
+        inds = 1:(try length(f.rhs) catch; 2 end) # Workaround for if 1-el tuple
         return μ_r_y, FixedEffectModel(coef(r)[inds], vcov_i[inds,inds],
-                          gen_fields[3:8]..., gen_fields[9][inds], gen_fields[10:end]...)
+               gen_fields[3:8]..., gen_fields[9][inds], gen_fields[10:end]...)
     end
 end
 
@@ -81,7 +84,9 @@ bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where 
 ```
 Bootstrap confidence intervals!
 """
-function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
+function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000,
+              ind::Int64 = 2) where T<:F64
+    # Define constants, gut-check inputs
     N = size(V, 1)
     @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid explanatory variable;" *
                          " check input."
@@ -103,7 +108,6 @@ function sup_t(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
     return quantile(vec(maximum(abs.(rand(d, draws)), dims = 2)), conf)
 end
 
-
 """
 ```
 function fan_reg(f::FormulaTerm, df::DataFrame; clust::Symbol=Symbol(),
@@ -119,7 +123,7 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 compute_σ::Symbol = :analytic, N_bs::Int64 = 1000, coef_ind = 2)
+                 compute_σ::Symbol = :analytic, N_bs = 1000, coef_ind = 2)
 
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
@@ -174,7 +178,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                     NaN, NaN
                 end
             else
-                @error "Implemented options for CIs limited to :bootstrap and :analytic."
+                @error "Implemented CI methods limited to :bootstrap & :analytic."
             end
             lb_i = m_x + bl
             ub_i = m_x + bu
@@ -218,8 +222,8 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     # Compute m_hat over grid of x's
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
-        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; cluster_on = cluster_on,
-                                       compute_σ = compute_σ, N_bs = N_bs, coef_ind = coef_ind)
+        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; N_bs = N_bs,
+            cluster_on = cluster_on, compute_σ = compute_σ, coef_ind = coef_ind)
     end
     return y_hat, lb, ub
 end
@@ -236,7 +240,8 @@ end
 
 """
 ```
-clean(df::DataFrame, c::Symbol; out_t::Type = eltype(findfirst(!ismissing, df[:,c])))
+clean(df::DataFrame, c::Symbol;
+      out_t::Type = eltype(findfirst(!ismissing, df[:,c])))
 clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict{Symbol,<:Type} = Dict())
 clean(df::DataFrame, cols::Vector{Symbol}, out_t::Type)
 ```
@@ -252,6 +257,6 @@ function clean(df::DataFrame, cols::Vector{Symbol}; out_t::Dict = Dict())
     end
     return df
 end
-clean(df::DataFrame, t::Dict{Symbol,<:Type}) = clean(df, collect(keys(t)); out_t = t)
+clean(df::DataFrame, t::Dict{Symbol,<:Type})=clean(df,collect(keys(t));out_t=t)
 clean(df::DataFrame, cols::Vector{Symbol}, out_t::Type) = clean(df, cols;
                      out_t = Dict([cols .=> repeat([out_t], length(cols))]...))
