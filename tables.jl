@@ -377,20 +377,45 @@ end
 ###########################
 # Table 8: Estimated Parameters from 2 stage GMM (415)
 ###########################
-function table_8()
+function table_8(; run_estimation = true, run_bootstrap = true,
+                   overwrite_output = false, VERBOSE = false, f_tol = 1e-2)
     irate = 1.22
     δ_y   = 1 / irate
-    run_estimation = !isfile("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv")
-    run_bootstrap  = !isfile("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
+
+    have_est = isfile("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv")
+    have_bs  = isfile("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
+    if overwrite_output
+        println("NOTE: You have set overwrite_output = true. " *
+                "This is going to overwrite your estimation/bootstrap output " *
+                "files in your output/ directory. If you wish to intercept this, "*
+                "there is still time! Slam CTRL-C!")
+    else
+        run_estimation = !have_est
+        run_bootstrap  = !have_bs
+        println("NOTE: You have set the keyword overwrite_output = false. " *
+                "Even if you have set run_{estimation, bootstrap} = true, "  *
+                "these commands will be ignored if a corresponding file already " *
+                "exists in your output/ directory. (Overwriting is set to false " *
+                "by default so you don't do something you regret.) If you wish to " *
+                "proceed, re-run this command with overwrite_output = true, or " *
+                "rename/move existing files for safe-keeping. ")
+    end
+    println("For reference, you" * (have_est ? " DO " : " DO NOT ") * "have an " *
+            "output estimation file, and" * (have_bs ? " DO " : " DO NOT ") *
+            "have an output bootstrap file.")
+    if !(run_estimation | have_est) | !(run_bootstrap | have_bs)
+        println("Since one or more of the above does not exist and you aren't " *
+                "currently generating it, you're going to hit an error " *
+                "building your LaTeX table in T - 1, 2, ...")
+    end
     estimation_1(; run_estimation = run_estimation, run_bootstrap = run_bootstrap,
-                   output_table = true)
+                   output_table = true, VERBOSE = VERBOSE, f_tol = f_tol)
 end
 
-###########################
-# Table 9: Modeled effects of time and distance costs on show-up rates (416)
-# Corresponds to counterfactuals_1.m
-###########################
-function table_9(; N_grid = 100)
+"""
+Corresponds to counterfactuals_1.m
+"""
+function counterfactuals_1(; N_grid = 100)
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     df = insertcols!(df, :logc => log.(df.consumption))
     df = rename!(df, [:closesubtreatment => :close, :consumption => :c,
@@ -406,7 +431,6 @@ function table_9(; N_grid = 100)
     η_sd  = 0.275
     δ_mom = 0.0
     δ_y   = 1 / irate
-
     μ_con_true = df.reg_const2[1]
     μ_β_true   = df.reg_pmt2[1]
     λ_con_true = df.reg_nofe_const[1]
@@ -417,10 +441,10 @@ function table_9(; N_grid = 100)
 
     df_show_hat = DataFrame([:hhid => df.hhid, :c_q => df.c_q])
 
-    # Col 2: Baseline estimate of show_hat
+    # Column 2: Baseline estimate of show_hat
     insertcols!(df_show_hat, :col2 => showuphat(df, t, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
-    # Col 3: Half Standard deviation of epsilon
+    # Column 3: Half Standard deviation of epsilon
     t_3 = [t[1], t[2]/2, t[3:5]...]
     insertcols!(df_show_hat, :col3 => showuphat(df, t_3, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
@@ -435,16 +459,12 @@ function table_9(; N_grid = 100)
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
 
     # Column 6: (constant mu AND lambda)
-    mean_mu = 0.0967742 # mean benefit receipt conditional on applying
-    λ_con_bel_cml  = norminvcdf(mean_mu)
-    λ_β_bel_cml    = 0.
-    μ_con_true_cml = norminvcdf(mean_mu)
-    μ_β_true_cml   = 0.
-
+    mean_mu = 0.0967742 # Mean benefit receipt conditional on applying
+    λ_con_bel_cml = μ_con_true_cml = norminvcdf(mean_mu)
+    λ_β_bel_cml   = μ_β_true_cml   = 0.
     df_6      = deepcopy(df)
     df_6.FE  .= 0.
     df_6.FE2 .= 0.
-
     t_6 = [t[1:3]..., λ_con_bel_cml, λ_β_bel_cml]
     insertcols!(df_show_hat, :col6 => showuphat(df_6, t_6, η_sd, δ, μ_con_true_cml,
                                                 μ_β_true_cml, λ_con_true, λ_β_true;
@@ -480,6 +500,46 @@ function table_9(; N_grid = 100)
     insertcols!(df_show_hat, :col12 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
                                               λ_con_true, λ_β_true; N_grid = N_grid)[1])
     CSV.write("output/MATLAB_table9_showup.csv", df_show_hat)
+end
+
+###########################
+# Table 9: Modeled effects of time and distance costs on show-up rates (416)
+###########################
+function table_9(; N_grid = 100, generate_counterfactuals = true)
+    # Load + clean data
+    df = DataFrame(load("input/matched_baseline.dta"))
+    df = insertcols!(df, :logc => log.(df.consumption))
+    df = rename!(df, [:closesubtreatment => :close, :consumption => :c,
+                      :PMTSCORE => :pmt])
+    df = clean(df, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
+
+    # Run counterfactuals if one has not done so already, or wishes to do so again!
+    if generate_counterfactuals | !isfile("output/MATLAB_table9_showup.csv")
+        counterfactuals_1(; N_grid = N_grid)
+    end
+    df_show = CSV.read("output/MATLAB_table9_showup.csv", DataFrame, header = true)
+
+    # Merge counterfactual estimates with baseline data
+    df = innerjoin(df, df_show, on = :hhid)
+
+    # Compute unobs. consumption (residual regressing log(c) on PMT)
+    df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
+    df = compute_quantiles(df)
+
+    N = size(df, 1) # No. of households, parameters to estimate
+    η_sd  = 0.275
+    δ_mom = 0.0
+    δ_y   = 1 / irate
+
+
+    # showup showup_hat showup_hat_halfsd ///
+    #  showup_hat_noeps showup_hat_smthc showup_hat_cml
+    #  close_logc = close*logc
+    #  closepoor = close*verypoor_povertyline1
+    #  poor = verypoor_povertyline1
+    #  showup_b = showup
+
+
 end
 
 ###########################

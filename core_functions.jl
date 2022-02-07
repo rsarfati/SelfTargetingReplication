@@ -58,6 +58,7 @@ Trapezoidal integration w/ uniform grid!
 """
 function trapz(f::Function, a::F64, b::F64, N_g::Int64)
     integ = f(a) + f(b)
+    N_g -= 1
     h = (b-a) / N_g
     x = a
     for j = 2:N_g

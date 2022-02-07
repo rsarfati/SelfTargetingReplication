@@ -50,8 +50,7 @@ function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, δ_mom, true_λ
         far_i   = (df0.c_q .== i) .&   iszero.(df0.close)
         close_i = (df0.c_q .== i) .& .!iszero.(df0.close)
         moments[:,i]   = Δ_showup .* far_i   / sum(far_i)
-        # I do not quite understand why the MATLAB code is doing this, however,
-        # δ_mom = 0 for the main estimation, so it shouldn't affect much.
+        # Following MATLAB code. Note that δ_mom = 0 for the main estimation
         moments[:,5+i] = (Δ_showup .* close_i / sum(close_i)) -
                          δ_mom * moments[:,i]
     end
@@ -75,7 +74,7 @@ function compute_moments(df0::D, showup_hat::Union{T,Vector{T}}, δ_mom, true_λ
     moments[:,19] = (ind_λ .- df0.getbenefit)           .* df0.showup / N_show
     moments[:,20] = (ind_λ .- df0.getbenefit) .* Δ_logc .* df0.showup / N_show
 
-    # If showup hat exactly zero, the λ moments are NaN; replace w/ large number
+    # If showup hat exactly zero, the λ moments are NaN; replace w/ large num.
     moments[isnan.(moments)] .= 10000.
     return moments .* N
 end
@@ -96,7 +95,7 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
     αa = μ_ϵ / s
     β  = 1 / s
 
-    # Lower and upper bound, grid density for the numerical integration over eta
+    # Lower and upper bound, grid density for the numerical integration over η
     lb = -η_sd * 4.
     ub = -lb
 
@@ -112,15 +111,6 @@ function showuphat(df::Union{DataFrame,DataFrameRow}, t::Vector{T}, η_sd::T,
 
         prob_s = (1 .- inv.(1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ αa)))
         prob_u = (1 .- inv.(1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Λ  .* relu_2mor) .+ αa)))
-
-        @show δ, λ_con_bel, λ_β_bel, β, μ_β_true, μ_con_true
-        # @show relu_2day[1:10]
-        # @show relu_2mor[1:10]
-        # @show Mu[1:10]
-        # @show Λ[1:10]
-        # @show prob_s[1:10]
-        # @show prob_u[1:10]
-        @show exp.(β .* (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ αa)
         return (α .* prob_s .+ (1 - α) .* prob_u) .* pdf(Normal(0, η_sd), η)
     end
 
@@ -161,7 +151,7 @@ Two Stage Feasible GMM for Targeting Paper
 #	of epsilon evaluated at (-gain_i).
 """
 function GMM_problem(df0::DataFrame, danual::T; δ_mom::T = 0.0, irate::T = 1.22,
-                     η_sd::T = 0.275, VERBOSE=true) where T<:F64
+                     η_sd::T = 0.275, f_tol = 1e-2, VERBOSE = true) where T<:F64
 
     μ_con_true = df0.reg_const2[1]
     μ_β_true   = df0.reg_pmt2[1]
@@ -186,7 +176,7 @@ function GMM_problem(df0::DataFrame, danual::T; δ_mom::T = 0.0, irate::T = 1.22
     function g(t::Vector{T}, df1::D) where {T<:Float64, D<:DataFrame}
         showup_hat, induced_λ = showuphat(df1, t, η_sd, δ, μ_con_true, μ_β_true,
                                           λ_con_true, λ_β_true)
-        true_λ    = cdf.(Normal(), λ_con_true   .+ λ_β_true   .* df1.logc)
+        true_λ = cdf.(Normal(), λ_con_true   .+ λ_β_true   .* df1.logc)
         bel_λ  = cdf.(Normal(), t[4] .+ t[5] .* df1.logc)
         return compute_moments(df1, showup_hat, δ_mom, true_λ, bel_λ, induced_λ)
     end
@@ -205,13 +195,13 @@ function GMM_problem(df0::DataFrame, danual::T; δ_mom::T = 0.0, irate::T = 1.22
     println("Running First Stage... (approx. 1 min)")
     W0 = Matrix{Float64}(I, N_m, N_m)
     t1 = minimizer(optimize(x -> gAg(x, W0), lb1, ub1, t0, NelderMead(),
-                            Optim.Options(f_tol=1e-2, show_trace = VERBOSE)))
+                            Optim.Options(f_tol = f_tol, show_trace = VERBOSE)))
     # GMM: Second stage
     println("Running Second Stage... (approx. 1 min)")
     g1 = g(t1, df)
     Om = inv(g1' * g1 / N)
     return minimizer(optimize(x -> gAg(x, Om), lb1, ub1, t1, NelderMead(),
-                              Optim.Options(g_tol=1e5, show_trace = VERBOSE)))
+                              Optim.Options(f_tol = f_tol, show_trace = VERBOSE)))
 end
 
 """
@@ -223,7 +213,7 @@ Output: MATLAB_est_d**.csv
 """
 function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = false,
                       run_estimation = false, run_bootstrap = false,
-                      output_table = true, N_bs = 100)
+                      output_table = true, N_bs = 100, f_tol = 1e-2)
     # Load + organize data
     df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
     df = insertcols!(df, :logc => log.(df.consumption))
@@ -231,9 +221,8 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
                       :pmtscore => :pmt])
     df = clean(df, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
 
-    # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
+    # Compute unobs. cons (residual regressing log(cons) on PMT)
     df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
-
     N    = size(df, 1) # No. of households
     N_p  = 5           # No. of parameters to estimate
 
@@ -243,7 +232,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
             println("\nEstimating discount factor: ", δ_y)
             println("------------------------------------------------")
             min_t = GMM_problem(df, δ_y; δ_mom = δ_mom, irate = irate,
-                                η_sd = η_sd, VERBOSE = VERBOSE)
+                                η_sd = η_sd, VERBOSE = VERBOSE, f_tol = f_tol)
             println("Estimated parameters are: ", min_t)
             CSV.write("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv",
                       Tables.table(min_t))
@@ -262,7 +251,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, VERBOSE = fal
             df_bs  = df[idx_bs,:]
             try
                 θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom = δ_mom, irate = irate,
-                                         η_sd = η_sd, VERBOSE = false)
+                                         η_sd = η_sd, VERBOSE = false, f_tol = f_tol)
                 CSV.write("output/MATLAB_bs_$(Int(round(δ_y * 100)))_secondhalf.csv", Tables.table(θ_bs))
                 it += 1
             catch e
