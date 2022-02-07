@@ -10,7 +10,7 @@ using Optim, Printf, Plots, Statistics, StatFiles, StatsBase, StatsFuns
 using FixedEffectModels, GLM, RegressionTables, QuadGK, Vcov
 using Binscatters, CategoricalArrays, CovarianceMatrices
 # Imports for shorthand
-import ForwardDiff.jacobian, Optim.minimizer
+import ForwardDiff.jacobian, Optim.minimizer, Tables.table
 import Vcov.cluster
 
 # TODO: Specify path to working directory!
