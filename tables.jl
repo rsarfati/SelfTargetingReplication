@@ -50,7 +50,7 @@ function table_3(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     write(io, " & $(col_w(0.19)){\\centering Interviewed\\\\Households That")
     write(io,                   "\\\\Received Benefits (\\%)}")
     write(io, " & $(col_w(0.15)){\\centering Tot. Households\\\\")
-    write(io,                   "That Received\\\\Benefits (\\%)}\\\\\\hline\\\\")
+    write(io,                "That Received\\\\Benefits (\\%)}\\\\\\hline\\\\")
 
     selft = (df.selftargeting .== 1.0)
     intv  = (df.showup        .== 1.0)
@@ -77,7 +77,8 @@ function table_4(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load data
     df = DataFrame(load("input/matched_baseline.dta"))
-    rename!(df, [:logconsumption => :logc, :closesubtreatment => :close])
+    rename!(df, [:logconsumption => :logc, :closesubtreatment => :close,
+                 :povertyline3 => :pov])
 
     # Drop non self-targeting households
     df = df[df.selftargeting .== 1, :]
@@ -93,8 +94,8 @@ function table_4(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     # Run 3 regression specifications
     μ,    r    = Vector{F64}(undef, 3), Vector{FixedEffectModel}(undef, 3)
     μ[1], r[1] = glm_clust(f, df; clust = :hhea)
-    μ[2], r[2] = glm_clust(f, df[df.pcexppred .<  df.povertyline3,:]; clust = :hhea)
-    μ[3], r[3] = glm_clust(f, df[df.pcexppred .>= df.povertyline3,:]; clust = :hhea)
+    μ[2], r[2] = glm_clust(f, df[df.pcexppred .<  df.pov,:]; clust = :hhea)
+    μ[3], r[3] = glm_clust(f, df[df.pcexppred .>= df.pov,:]; clust = :hhea)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((["No", "No", "No"], μ))
@@ -110,21 +111,24 @@ end
 function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load baseline data
-    df = DataFrame(load("input/matched_baseline.dta"))
-    rename!(df, [:logconsumption => :logc, :closesubtreatment => :close])
-    insertcols!(df, :base_or_end => 0.0,
-                    :benefit     => categorical(df.getbenefit))
+    pre = "input/matched"
+    df = DataFrame(load("$(pre)_baseline.dta"))
+    rename!(df, [:logconsumption => :logc, :closesubtreatment => :close,
+                 :selftargeting => :self])
+    insertcols!(df, [:base_or_end => 0.0, :get => (df.getbenefit .== 1),
+                     :benefit => categorical(df.getbenefit)])
 
     # Load midline data
-    df_m = clean(DataFrame(load("input/matched_midline.dta")), [:flag_newHH], F64)
+    df_m = clean(DataFrame(load("$(pre)_midline.dta")),[:flag_newHH],F64)
     df_m = df_m[df_m.flag_newHH .== 1.0, :]
-    rename!(df_m, [:logconsumption => :logc, :closesubtreatment => :close])
+    rename!(df_m, [:logconsumption => :logc, :closesubtreatment => :close,
+                   :selftargeting => :self])
     df_m = convert_types(df_m, [:logc, :showup] .=> F64)
-    insertcols!(df_m, :base_or_end => 1.0)
+    insertcols!(df_m, [:base_or_end => 1.0, :get => (df_m.getbenefit .== 1)])
 
     # Includes baseline and midline data
     df_bm = vcat(df, df_m, cols = :union)
-    df_bm = clean(df_bm[df_bm.getbenefit .== 1, :], [:logc], F64)
+    df_bm = clean(df_bm[df_bm.get .== 1, :], [:logc], F64)
 
     ####################################
     # Analysis (w/o Stratum FEs) - MATCH
@@ -134,22 +138,23 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     μ_5a, r_5a = Vector{F64}(undef, 6), Vector{FixedEffectModel}(undef, 6)
     μ_5b, r_5b = Vector{F64}(undef, 6), Vector{FixedEffectModel}(undef, 6)
 
-    μ_5a[1], r_5a[1] = mean(df[df.getbenefit .== 1, :logc]),
-                        reg(df[df.getbenefit .== 1, :], @formula(logc ~ selftargeting), cluster(:hhea))
+    μ_5a[1], r_5a[1] = mean(df[df.get, :logc]),
+                        reg(df[df.get, :], @formula(logc~self), cluster(:hhea))
 
     μ_5a[2], r_5a[2] = mean(df_bm.logc),
-                        reg(df_bm, @formula(logc ~ selftargeting + base_or_end), cluster(:hhea))
+                        reg(df_bm, @formula(logc ~ self + base_or_end),
+                            cluster(:hhea))
 
-    μ_5a[3], r_5a[3] = glm_clust(@formula(getbenefit ~ selftargeting + logc + logc * selftargeting),
-                                 clean(df, [:logc, :getbenefit, :selftargeting], F64); clust = :hhea)
+    μ_5a[3], r_5a[3] = glm_clust(@formula(get ~ self + logc + logc * self),
+                           clean(df, [:logc, :get, :self], F64); clust = :hhea)
 
-    μ_5a[4], r_5a[4] = glm_clust(@formula(mistarget ~ selftargeting),
+    μ_5a[4], r_5a[4] = glm_clust(@formula(mistarget ~ self),
                                  clean(df, [:mistarget], F64); clust = :hhea)
 
-    μ_5a[5], r_5a[5] = glm_clust(@formula(excl_error ~ selftargeting),
+    μ_5a[5], r_5a[5] = glm_clust(@formula(excl_error ~ self),
                                  clean(df, [:excl_error], F64); clust = :hhea)
 
-    μ_5a[6], r_5a[6] = glm_clust(@formula(incl_error ~ selftargeting),
+    μ_5a[6], r_5a[6] = glm_clust(@formula(incl_error ~ self),
                                  clean(df, [:incl_error], F64); clust = :hhea)
 
     ###########################
@@ -157,16 +162,17 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     ###########################
 
     # Matches (get 144 obs instead of 159, but all else matches, so letting go.)
-    μ_5b[1], r_5b[1] = mean(df[df.getbenefit .== 1, :logc]),
-                        reg(df[df.getbenefit .== 1, :],
-                        @formula(logc ~ selftargeting + fe(kecagroup)), cluster(:hhea))
+    μ_5b[1], r_5b[1] = mean(df[df.get, :logc]), reg(df[df.get, :],
+                        @formula(logc ~ self + fe(kecagroup)), cluster(:hhea))
 
     # Matches
     μ_5b[2], r_5b[2] = mean(df_bm.logc), reg(df_bm,
-                       @formula(logc ~ selftargeting + base_or_end + fe(kecagroup)), cluster(:hhea))
+                       @formula(logc ~ self + base_or_end + fe(kecagroup)),
+                       cluster(:hhea))
 
     # Logistic Regressions with FEs
-    insertcols!(df, :logc_ST => df.logc .* df.selftargeting)
+    insertcols!(df, :logc_ST => df.logc .* df.self)
+    df = clean(df, [:self], F64)
 
     # Manually drop groups which fail positivity!
     G_drop(d::DataFrame,
@@ -176,32 +182,31 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
 
     # Run conditional logit regressions, clustering at stratum level
-    μ_5b[3], r_5b[3] = glm_clust(@formula(getbenefit ~ selftargeting + logc + logc_ST + kecagroup),
-                                 df_drop(:getbenefit, clean(df, [:getbenefit, :logc, :selftargeting,
-                                                                 :logc_ST, :kecagroup], F64));
-                                 group = :kecagroup, clust = :kecagroup)
+    μ_5b[3], r_5b[3] = glm_clust(@formula(get ~ self + logc + logc_ST + kecagroup),
+                    df_drop(:get, clean(df, [:get,:logc,:logc_ST,:kecagroup], F64));
+                    group = :kecagroup, clust = :kecagroup)
 
-    μ_5b[4], r_5b[4] = glm_clust(@formula(mistarget ~ selftargeting + kecagroup),
-                                 df_drop(:mistarget, clean(df, [:mistarget, :selftargeting], F64));
-                                 group = :kecagroup, clust = :kecagroup)
+    μ_5b[4], r_5b[4] = glm_clust(@formula(mistarget ~ self + kecagroup),
+                    df_drop(:mistarget, clean(df, [:mistarget], F64));
+                    group = :kecagroup, clust = :kecagroup)
 
-    μ_5b[5], r_5b[5] = glm_clust(@formula(excl_error ~ selftargeting + kecagroup),
-                                 df_drop(:excl_error, clean(df, [:excl_error, :selftargeting], F64));
-                                 group = :kecagroup, clust = :kecagroup)
+    μ_5b[5], r_5b[5] = glm_clust(@formula(excl_error ~ self + kecagroup),
+                    df_drop(:excl_error, clean(df, [:excl_error], F64));
+                    group = :kecagroup, clust = :kecagroup)
 
-    μ_5b[6], r_5b[6] = glm_clust(@formula(incl_error ~ selftargeting + kecagroup),
-                                 df_drop(:incl_error, clean(df, [:incl_error, :selftargeting], F64));
-                                 group = :kecagroup, clust = :kecagroup)
+    μ_5b[6], r_5b[6] = glm_clust(@formula(incl_error ~ self + kecagroup),
+                    df_drop(:incl_error, clean(df, [:incl_error], F64));
+                    group = :kecagroup, clust = :kecagroup)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  6), μ_5a))
-    regtable(r_5a...; renderSettings = latexOutput("output/tables/Table5_NoStratumFEs.tex"),
-             regressors = ["selftargeting", "logc", "logc & selftargeting"],
+    regtable(r_5a...; regressors = ["selftargeting", "logc", "logc & selftargeting"],
+             renderSettings = latexOutput("output/tables/Table5_NoStratumFEs.tex"),
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 6), μ_5b))
-     regtable(r_5b...; renderSettings = latexOutput("output/tables/Table5_StratumFEs.tex"),
-     		  regressors = ["selftargeting", "logc", "logc_ST"],
+     regtable(r_5b...; regressors = ["selftargeting", "logc", "logc_ST"],
+              renderSettings = latexOutput("output/tables/Table5_StratumFEs.tex"),
               custom_statistics = mystats, table_kwargs...)
 
     return μ_5a, r_5a, μ_5b, r_5b
@@ -534,10 +539,11 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     r_9a = Vector{FixedEffectModel}(undef, 6)
     _, r_9a[1] = glm_clust(@formula(showup ~ close + logc + close_logc),
                                clean(df, [:showup], F64); clust = :hhea)
-    for i=2:6
-        _, r_9a[i] = glm_clust(@formula(Symbol("col$(i)") ~ close + logc + close_logc),
-                                  clean(df, [Symbol("col$(i)")], F64); clust = :hhea)
-    end
+    # for i=2:6
+    #     _, r_9a[i] = glm_clust(@formula(Symbol("col$(i)") ~ close + logc + close_logc),
+    #                               clean(df, [Symbol("col$(i)")], F64); clust = :hhea)
+    # end
+    
     # _, r_9a[2] = glm_clust(@formula(col2 ~ close + logc + close_logc),
     #                           clean(df, [:col2, :close, :close_logc], F64); clust = :hhea)
     # # R3: Logit
