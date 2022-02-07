@@ -385,28 +385,28 @@ function table_8(; run_estimation = true, run_bootstrap = true,
     have_est = isfile("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv")
     have_bs  = isfile("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
     if overwrite_output
-        println("NOTE: You have set overwrite_output = true. " *
+        println("NOTE: You have set overwrite_output = true. \n\n" *
                 "This is going to overwrite your estimation/bootstrap output " *
                 "files in your output/ directory. If you wish to intercept this, "*
-                "there is still time! Slam CTRL-C!")
+                "there is still time! Slam CTRL-C! \n")
     else
         run_estimation = !have_est
         run_bootstrap  = !have_bs
-        println("NOTE: You have set the keyword overwrite_output = false. " *
+        println("NOTE: You have set the keyword overwrite_output = false. \n\n" *
                 "Even if you have set run_{estimation, bootstrap} = true, "  *
-                "these commands will be ignored if a corresponding file already " *
+                "these flags will be ignored if the corresponding output file already " *
                 "exists in your output/ directory. (Overwriting is set to false " *
                 "by default so you don't do something you regret.) If you wish to " *
                 "proceed, re-run this command with overwrite_output = true, or " *
-                "rename/move existing files for safe-keeping. ")
+                "rename/move the existing files for safe-keeping. \n")
     end
-    println("For reference, you" * (have_est ? " DO " : " DO NOT ") * "have an " *
+    println("* For reference, you currently" * (have_est ? " DO " : " DO NOT ") * "have an " *
             "output estimation file, and" * (have_bs ? " DO " : " DO NOT ") *
-            "have an output bootstrap file.")
+            "have an output bootstrap file. *")
     if !(run_estimation | have_est) | !(run_bootstrap | have_bs)
-        println("Since one or more of the above does not exist and you aren't " *
-                "currently generating it, you're going to hit an error " *
-                "building your LaTeX table in T - 1, 2, ...")
+        println("\n Since one or more of the above files does not exist and you aren't " *
+                "presently indicating the intention to generate it, you're going to be " *
+                "hitting an error building your LaTeX table in T - 1, 2, ...")
     end
     estimation_1(; run_estimation = run_estimation, run_bootstrap = run_bootstrap,
                    output_table = true, VERBOSE = VERBOSE, f_tol = f_tol)
@@ -509,35 +509,62 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     # Load + clean data
     df = DataFrame(load("input/matched_baseline.dta"))
     df = insertcols!(df, :logc => log.(df.consumption))
-    df = rename!(df, [:closesubtreatment => :close, :consumption => :c,
-                      :PMTSCORE => :pmt])
-    df = clean(df, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
+    df = rename!(df, [:closesubtreatment => :close,
+                      :verypoor_povertyline1 => :poor])
 
-    # Run counterfactuals if one has not done so already, or wishes to do so again!
-    if generate_counterfactuals | !isfile("output/MATLAB_table9_showup.csv")
+    # Run scenarios if one has not done so already, or wishes to do so again!
+    scenarios_file = "output/MATLAB_table9_showup.csv"
+    if generate_counterfactuals | !isfile(scenarios_file)
         counterfactuals_1(; N_grid = N_grid)
     end
-    df_show = CSV.read("output/MATLAB_table9_showup.csv", DataFrame, header = true)
+    df_show = CSV.read(scenarios_file, DataFrame, header = true)
 
     # Merge counterfactual estimates with baseline data
     df = innerjoin(df, df_show, on = :hhid)
 
-    # Compute unobs. consumption (residual regressing log(c) on PMT)
-    df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
-    df = compute_quantiles(df)
+    # Clean merged data for missing values, define interactions for Panel B
+    df = clean(df, [:logc, :close, :poor], F64)
+    insertcols!(df, :close_logc  =>   df.logc  .*   df.close,
+                    :close_poor  =>   df.close .*   df.poor,
+                    :close_above =>   df.close .* .!df.poor,
+                    :far_poor    => .!df.close .*   df.poor,
+                    :far_above   => .!df.close .* .!df.poor)
 
-    N = size(df, 1) # No. of households, parameters to estimate
-    η_sd  = 0.275
-    δ_mom = 0.0
-    δ_y   = 1 / irate
+    ### Store output (Panel A)
+    r_9a = Vector{FixedEffectModel}(undef, 6)
+    _, r_9a[1] = glm_clust(@formula(showup ~ close + logc + close_logc),
+                               clean(df, [:showup], F64); clust = :hhea)
+    for i=2:6
+        _, r_9a[i] = glm_clust(@formula(Symbol("col$(i)") ~ close + logc + close_logc),
+                                  clean(df, [Symbol("col$(i)")], F64); clust = :hhea)
+    end
+    # _, r_9a[2] = glm_clust(@formula(col2 ~ close + logc + close_logc),
+    #                           clean(df, [:col2, :close, :close_logc], F64); clust = :hhea)
+    # # R3: Logit
+    # _, r_9a[2] = glm_clust(@formula(col3 ~ close + logc + close_logc),
+    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
+    # #
+    # _, r_9a[2] = glm_clust(@formula(col4 ~ close + logc + close_logc),
+    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
+    # #
+    # _, r_9a[2] = glm_clust(@formula(col5 ~ close + logc + close_logc),
+    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
+    # #
+    # _, r_9a[2] = glm_clust(@formula(col6 ~ close + logc + close_logc),
+    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
 
+    ### Store output (Panel B)
+    r_9b = Vector{Vector{F64}}(undef, 4)
+    outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
+    groups   = [:far_above, :close_above, :far_below, :close_poor]
+    for (i, g) in enumerate(groups)
+        for (i, out) in enumerate(outcomes)
+            r_9b[i][j] = (df[:,out] .* df[:,g]) / sum(df[:,g])
+        end
+    end
 
-    # showup showup_hat showup_hat_halfsd ///
-    #  showup_hat_noeps showup_hat_smthc showup_hat_cml
-    #  close_logc = close*logc
-    #  closepoor = close*verypoor_povertyline1
-    #  poor = verypoor_povertyline1
-    #  showup_b = showup
+    ### Store output (Panel C)
+    r_9c = Vector{Vector{F64}}(undef, 3)
 
 
 end
