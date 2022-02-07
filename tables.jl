@@ -115,8 +115,8 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     df = DataFrame(load("$(pre)_baseline.dta"))
     rename!(df, [:logconsumption => :logc, :closesubtreatment => :close,
                  :selftargeting => :self])
-    insertcols!(df, [:base_or_end => 0.0, :get => (df.getbenefit .== 1),
-                     :benefit => categorical(df.getbenefit)])
+    insertcols!(df, :base_or_end => 0.0, :get => (df.getbenefit .== 1),
+                     :benefit => categorical(df.getbenefit))
 
     # Load midline data
     df_m = clean(DataFrame(load("$(pre)_midline.dta")),[:flag_newHH],F64)
@@ -124,7 +124,7 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     rename!(df_m, [:logconsumption => :logc, :closesubtreatment => :close,
                    :selftargeting => :self])
     df_m = convert_types(df_m, [:logc, :showup] .=> F64)
-    insertcols!(df_m, [:base_or_end => 1.0, :get => (df_m.getbenefit .== 1)])
+    insertcols!(df_m, :base_or_end => 1.0, :get => (df_m.getbenefit .== 1))
 
     # Includes baseline and midline data
     df_bm = vcat(df, df_m, cols = :union)
@@ -200,12 +200,12 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  6), μ_5a))
-    regtable(r_5a...; regressors = ["selftargeting", "logc", "logc & selftargeting"],
+    regtable(r_5a...; regressors = ["self", "logc", "logc & self"],
              renderSettings = latexOutput("output/tables/Table5_NoStratumFEs.tex"),
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 6), μ_5b))
-     regtable(r_5b...; regressors = ["selftargeting", "logc", "logc_ST"],
+     regtable(r_5b...; regressors = ["self", "logc", "logc_ST"],
               renderSettings = latexOutput("output/tables/Table5_StratumFEs.tex"),
               custom_statistics = mystats, table_kwargs...)
 
@@ -390,14 +390,14 @@ function table_8(; run_estimation = true, run_bootstrap = true,
     have_est = isfile("output/MATLAB_est_d$(Int(round(δ_y * 100))).csv")
     have_bs  = isfile("output/MATLAB_bs_$(Int(round(δ_y * 100))).csv")
     if overwrite_output
-        println("NOTE: You have set overwrite_output = true. \n\n" *
+        println("NOTE on Table 8: You have set overwrite_output = true. \n\n" *
                 "This is going to overwrite your estimation/bootstrap output " *
                 "files in your output/ directory. If you wish to intercept this, "*
                 "there is still time! Slam CTRL-C! \n")
     else
         run_estimation = !have_est
         run_bootstrap  = !have_bs
-        println("NOTE: You have set the keyword overwrite_output = false. \n\n" *
+        println("NOTE on Table 8: You have set the keyword overwrite_output = false.\n\n" *
                 "Even if you have set run_{estimation, bootstrap} = true, "  *
                 "these flags will be ignored if the corresponding output file already " *
                 "exists in your output/ directory. (Overwriting is set to false " *
@@ -543,7 +543,7 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     #     _, r_9a[i] = glm_clust(@formula(Symbol("col$(i)") ~ close + logc + close_logc),
     #                               clean(df, [Symbol("col$(i)")], F64); clust = :hhea)
     # end
-    
+
     # _, r_9a[2] = glm_clust(@formula(col2 ~ close + logc + close_logc),
     #                           clean(df, [:col2, :close, :close_logc], F64); clust = :hhea)
     # # R3: Logit

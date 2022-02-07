@@ -10,7 +10,7 @@ using Optim, Printf, Plots, Statistics, StatFiles, StatsBase, StatsFuns
 using FixedEffectModels, GLM, RegressionTables, QuadGK, Vcov
 using Binscatters, CategoricalArrays, CovarianceMatrices
 # Imports for shorthand
-import ForwardDiff.jacobian, Optim.minimizer, Tables.table
+import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
 
 # TODO: Specify path to working directory!
@@ -38,9 +38,11 @@ labels = Dict("logconsumption" => "Log Consumption",
               "logc_ST" => "Log Cons. \$\\times\$ self-targeting",
               "close_logc" => "Close \$\\times\$ log cons.",
               "logc & selftargeting" => "Log Cons. \$\\times\$ self-targeting",
-              "selftargeting" => "Self-targeting",
+			  "logc & self" => "Log Cons. \$\\times\$ self-targeting",
+              "selftargeting" => "Self-targeting", "self" => "Self-targeting",
               "getbenefits" => "Log Consumption (OLS)",
               "getbenefit" => "\\substack{Get Benefits\\\\(Logit)}",
+			  "get" => "\\substack{Get Benefits\\\\(Logit)}",
               "mistarget" => "\\substack{Error\\\\(Logit)}",
               "excl_error" => "\\substack{Excl. Error\\\\(Logit)}",
               "incl_error" => "\\substack{Incl. Error\\\\(Logit)}",
@@ -67,17 +69,16 @@ include("tables.jl")
 include("figures.jl")
 
 ###### Tables #######
-# table_1()
-# table_3()
-# table_4()
-# table_5()
-# table_6()
-# table_7()
+table_1()
+table_3()
+table_4()
+table_5()
+table_6()
+table_7()
 
-### Run GMM estimation
+### Run GMM estimation, generate tables
 include("gmm.jl")
-
-# table_8()
+table_8()
 # table_9()
 # table_10()
 

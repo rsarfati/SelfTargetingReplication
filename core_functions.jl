@@ -22,8 +22,9 @@ end
 
 """
 ```
-function glm_clust(f::FormulaTerm, df::DataFrame, link::Link; group::Symbol=Symbol(),
-                   clust::Symbol=Symbol(), wts::Vector{F64} = Vector{F64}())
+glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
+          group::Symbol=Symbol(), clust::Symbol=Symbol(),
+          wts::Vector{F64} = Vector{F64}(), glm_kwargs = Dict())
 ```
 Helper function to make printable RegressionModel object with clustered SEs.
 
@@ -66,7 +67,7 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
     # Collect fields for automatic table production
     gen_fields = [getfield(r_fields, s) for s in fieldnames(typeof(r_fields))]
 
-    # Output conformed to type FixedEffectModel in both cases, for type stability
+    # Output conformed to FixedEffectModel in both cases, for type stability
     if link == ProbitLink() || group == Symbol()
         # Case: {Logit, Probit}
         return μ_r_y, FixedEffectModel(coef(r), vcov_i, gen_fields[3:end]...)
@@ -80,7 +81,7 @@ end
 
 """
 ```
-bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000, ind::Int64 = 2) where T<:F64
+bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64=1000, ind = 2) where T<:F64
 ```
 Bootstrap confidence intervals!
 """
@@ -88,8 +89,8 @@ function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000,
               ind::Int64 = 2) where T<:F64
     # Define constants, gut-check inputs
     N = size(V, 1)
-    @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid explanatory variable;" *
-                         " check input."
+    @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid " *
+                          "explanatory variable; check input."
     return quantile(rand(MvNormal(zeros(N), V), draws)[ind,:], [1-conf, conf])
 end
 function bs_σ(V::T; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
@@ -178,7 +179,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                     NaN, NaN
                 end
             else
-                @error "Implemented CI methods limited to :bootstrap & :analytic."
+                @error "Implemented CIs limited to {:bootstrap, :analytic}."
             end
             lb_i = m_x + bl
             ub_i = m_x + bu
@@ -207,8 +208,8 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             function CV(h_test)
                 m_i, w_i = zeros(N), zeros(N)
                 for i=1:N
-                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; compute_σ = :none,
-                                           save_w_ind = i, coef_ind = coef_ind)
+                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; compute_σ=:none,
+                                           save_w_ind=i, coef_ind=coef_ind)
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end

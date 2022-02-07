@@ -151,8 +151,8 @@ How are moments computed?
   For each obs, calculate showup_hat as the probability that ϵ > -gain (i.e.
   that gain + ϵ > 0) This is just 1 - {the cdf of F_ϵ evaluated at (-gain_i)}.
 """
-function GMM_problem(df0::DataFrame, danual::T; δ_mom::T = 0.0, irate::T = 1.22,
-                     η_sd::T = 0.275, f_tol::T = 1e-2, VERBOSE = true) where T<:F64
+function GMM_problem(df0::DataFrame, danual::T; δ_mom::T=0.0, irate::T=1.22,
+                     η_sd::T=0.275, f_tol::T=1e-2, VERBOSE=true) where T<:F64
 
     # Fetch relevant constants before dropping columns
     μ_con_true = df0.reg_const2[1]
@@ -229,6 +229,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_bs = 100,
     N    = size(df, 1) # No. households
     N_p  = 5           # No. parameters to estimate
     pre  = "output/MATLAB"
+
     # Run 3 estimations with varying discount factors
     if run_estimation
         for δ_y in [1/irate, 0.5, 0.95]
@@ -255,7 +256,7 @@ function estimation_1(; irate = 1.22, η_sd = 0.275, δ_mom = 0.0, N_bs = 100,
             try
                 θ_bs[it,:] = GMM_problem(df_bs, δ_y; δ_mom=δ_mom, irate=irate,
                                          η_sd=η_sd, VERBOSE=false, f_tol=f_tol)
-                CSV.write("$(pre)_bs_$(Int(round(δ_y*100))).csv", table(θ_bs))
+                CSV.write("$(pre)_bs_$(Int(round(δ_y*100))).csv", Tables.table(θ_bs))
                 it += 1
             catch e
                 @show e
