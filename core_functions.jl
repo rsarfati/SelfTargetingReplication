@@ -149,6 +149,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     ########################################################
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
                    K::Function = K_normal, save_w_ind = 0, return_CI = false)
+        N = length(X)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
         # Eq 2.3

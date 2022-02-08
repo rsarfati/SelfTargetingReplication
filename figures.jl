@@ -94,9 +94,9 @@ function figure_3(; labels::Dict{String,String} = labels)
     # Observable component of log consumption
     x0_grid = collect(range(11.5; stop = 14.5, length = 100))
     y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid;
-                            clust = :hhea, bw = :cross_val, caller_id = "Fig. 3a")
-
-    pA = plot(x0_grid, y_hat, legend = false, xrange = (11.4, 15), yrange = (0., 0.8),
+                            clust = :hhea, bw = :cross_val,
+                            caller_id = "Fig. 3a")
+    pA = plot(x0_grid, y_hat, legend = false, xrange=(11.4,15), yrange=(0.,0.8),
               xl = "Observable Component of Log Consumption (PMT Score)",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pA, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
@@ -110,8 +110,7 @@ function figure_3(; labels::Dict{String,String} = labels)
     x0_grid = collect(range(-1.75; stop = 1.75, length = 100))
     y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea,
                             bw = :cross_val, caller_id = "Fig. 3b")
-
-    pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
+    pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange=(0.,0.8),
               xl = "Unobservable Component of Log Consumption",
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pB, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
@@ -149,10 +148,10 @@ function figure_4(; labels::Dict{String,String} = labels)
     # I did a bit of experimentation setting different bandwidths to back out
     # what was likely being used in the Stata code! Cross-validation chooses a band-
     # width which is pretty close, but doesn't match the figure in the paper as well.
-    y1, u1, l1 = fan_reg(@formula(getbenefit ~ logc),
-                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea, bw = 0.2)
-    y2, u2, l2 = fan_reg(@formula(getbenefit ~ logc),
-                      df[df.maintreatment.==2,:],    x0_grid; clust = :hhea, bw = 0.2)
+    y1, u1, l1 = fan_reg(@formula(getbenefit ~ logc), df[df.maintreatment.==1,:],
+                         x0_grid; clust = :hhea, bw = 0.2, caller_id = "Fig. 4a")
+    y2, u2, l2 = fan_reg(@formula(getbenefit ~ logc), df[df.maintreatment.==2,:],
+                         x0_grid; clust = :hhea, bw = 0.2, caller_id = "Fig. 4b")
 
     pB = plot(x0_grid, y1, legend = :topright, xrange = (11, 15.4), yrange = (0., 0.4),
               xl = "Log Consumption", label="Automatic Screening",
