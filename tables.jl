@@ -219,14 +219,16 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Load baseline data
     df = DataFrame(load("input/matched_baseline.dta"))
-    rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close])
+    rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close,
+                 :selftargeting => :self])
     N  = size(df, 1)
 
     insertcols!(df, :base_or_end  => 0.0,
-                    :logc_ST      => df.logc .* df.selftargeting,
+                    :logc_ST      => df.logc .* df.self,
                     :benefit      => categorical(df.getbenefit),
-                    :benefit_hyp  => categorical(((df.pcexppred_noise .< df.povertyline3_noise) .&
-                                     .!((df.showup .== 0) .& (df.selftargeting .== 1)))),
+                    :benefit_hyp  => categorical(((df.pcexppred_noise .<
+                                                   df.povertyline3_noise) .&
+                                     .!((df.showup .== 0) .& (df.self .== 1)))),
                     :excl_err_hyp => Vector{Union{F64,Missing}}(missing, N),
                     :incl_err_hyp => Vector{Union{F64,Missing}}(missing, N))
 
@@ -249,19 +251,19 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     μ_6a[1], r_6a[1] = mean(df[df.benefit_hyp .== 1, :logc]),
                         reg(df[df.benefit_hyp .== 1, :],
-                            @formula(logc ~ selftargeting), cluster(:hhea))
+                            @formula(logc ~ self), cluster(:hhea))
 
-    μ_6a[2], r_6a[2] = glm_clust(@formula(benefit_hyp ~ selftargeting + logc + logc_ST),
-                                 clean(df, [:logc, :benefit_hyp, :selftargeting, :logc_ST], F64);
+    μ_6a[2], r_6a[2] = glm_clust(@formula(benefit_hyp ~ self + logc + logc_ST),
+                                 clean(df, [:logc, :benefit_hyp, :self, :logc_ST], F64);
                                  clust = :kecagroup)
 
-    μ_6a[3], r_6a[3] = glm_clust(@formula(mistarget_hyp ~ selftargeting),
+    μ_6a[3], r_6a[3] = glm_clust(@formula(mistarget_hyp ~ self),
                                  clean(df, [:mistarget_hyp], F64); clust = :kecagroup)
 
-    μ_6a[4], r_6a[4] = glm_clust(@formula(excl_err_hyp ~ selftargeting),
+    μ_6a[4], r_6a[4] = glm_clust(@formula(excl_err_hyp ~ self),
                                  clean(df, [:excl_err_hyp], F64); clust = :kecagroup)
 
-    μ_6a[5], r_6a[5] = glm_clust(@formula(incl_err_hyp ~ selftargeting),
+    μ_6a[5], r_6a[5] = glm_clust(@formula(incl_err_hyp ~ self),
                                  clean(df, [:incl_err_hyp], F64); clust = :kecagroup)
 
     ###########################
@@ -270,7 +272,7 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     # match, not quite SE
     μ_6b[1], r_6b[1] = mean(df[df.benefit_hyp .== 1, :logc]),
                         reg(df[df.benefit_hyp .== 1, :],
-                            @formula(logc ~ selftargeting + fe(kecagroup)), cluster(:hhea))
+                            @formula(logc ~ self + fe(kecagroup)), cluster(:hhea))
 
     # Manually drop groups which fail positivity!
     G_drop(v::Symbol, d::DataFrame) = findall(g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
@@ -279,34 +281,34 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(v, d),), :]
 
     # approx match; N agrees, SE sort of differ
-    μ_6b[2], r_6b[2] = glm_clust(@formula(benefit_hyp ~ selftargeting + logc + logc_ST + kecagroup),
-                                 df_drop(:benefit_hyp, clean(df, [:benefit_hyp, :logc, :selftargeting,
+    μ_6b[2], r_6b[2] = glm_clust(@formula(benefit_hyp ~ self + logc + logc_ST + kecagroup),
+                                 df_drop(:benefit_hyp, clean(df, [:benefit_hyp, :logc, :self,
                                                                  :logc_ST, :kecagroup], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
-    μ_6b[3], r_6b[3] = glm_clust(@formula(mistarget_hyp ~ selftargeting + kecagroup),
-                                 df_drop(:mistarget_hyp, clean(df, [:mistarget_hyp, :selftargeting], F64));
+    μ_6b[3], r_6b[3] = glm_clust(@formula(mistarget_hyp ~ self + kecagroup),
+                                 df_drop(:mistarget_hyp, clean(df, [:mistarget_hyp, :self], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     # I get a WAY different value here. Does it have to do with the fact that I drop missings before I determine
     # whether outcomes are all positives or all negatives?
-    μ_6b[4], r_6b[4] = glm_clust(@formula(excl_err_hyp ~ selftargeting + kecagroup),
+    μ_6b[4], r_6b[4] = glm_clust(@formula(excl_err_hyp ~ self + kecagroup),
                                  df_drop(:excl_err_hyp, clean(df, [:excl_err_hyp], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
-    μ_6b[5], r_6b[5] = glm_clust(@formula(incl_err_hyp ~ selftargeting + kecagroup),
-                                 df_drop(:incl_err_hyp, clean(df, [:incl_err_hyp, :selftargeting], F64));
+    μ_6b[5], r_6b[5] = glm_clust(@formula(incl_err_hyp ~ self + kecagroup),
+                                 df_drop(:incl_err_hyp, clean(df, [:incl_err_hyp, :self], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  5), μ_6a))
     regtable(r_6a...; renderSettings = latexOutput("output/tables/Table6_NoStratumFEs.tex"),
-             regressors = ["selftargeting", "logc", "logc_ST"],
+             regressors = ["self", "logc", "logc_ST"],
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 5), μ_6b))
      regtable(r_6b...; renderSettings = latexOutput("output/tables/Table6_StratumFEs.tex"),
-     		  regressors = ["selftargeting", "logc", "logc_ST"],
+     		  regressors = ["self", "logc", "logc_ST"],
               custom_statistics = mystats, table_kwargs...)
 
     return μ_6a, r_6a, μ_6b, r_6b
@@ -317,57 +319,60 @@ end
 ###########################
 function table_7(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     df = DataFrame(load("input/matched_baseline.dta"))
-    rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close])
-    N  = size(df, 1)
+    rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close,
+                 :selftargeting => :self])
 
-    quints = [quantile(clean(df, [:logc], F64).logc, p) for p in [0.0, .2, .4, .6, .8, 1.0]]
-    quint(x, n::Int64) = ismissing(x) ? missing : (x > quints[n]) & (x <= quints[n+1])
+    # Helper functions for speedy definition of quintiles
+    quints = [quantile(clean(df,[:logc],F64).logc, p) for p in 0.0:0.2:1.0]
+    quint(x, n) = ismissing(x) ? missing : (x > quints[n]) & (x <= quints[n+1])
 
-    insertcols!(df, :close_logc  => df.logc .* df.close,
-                    :logc_ST     => df.logc .* df.selftargeting,
-                    :inc1 => quint.(df.logc, 1),
-                    :inc2 => quint.(df.logc, 2), :inc3 => quint.(df.logc, 3),
-                    :inc4 => quint.(df.logc, 4), :inc5 => quint.(df.logc, 5))
-    insertcols!(df, :closeinc1   => df.close .* df.inc1,
-                    :closeinc2   => df.close .* df.inc2,
-                    :closeinc3   => df.close .* df.inc3,
-                    :closeinc4   => df.close .* df.inc4,
-                    :closeinc5   => df.close .* df.inc5)
+    insertcols!(df, :logc_ST => df.logc .* df.self,
+                    :inc1    => quint.(df.logc, 1),
+                    :inc2    => quint.(df.logc, 2), :inc3 => quint.(df.logc, 3),
+                    :inc4    => quint.(df.logc, 4), :inc5 => quint.(df.logc, 5))
+    insertcols!(df, :close_logc => df.logc .* df.close,
+                    :closeinc1  => df.close .* df.inc1,
+                    :closeinc2  => df.close .* df.inc2,
+                    :closeinc3  => df.close .* df.inc3,
+                    :closeinc4  => df.close .* df.inc4,
+                    :closeinc5  => df.close .* df.inc5)
 
-    df = df[df.selftargeting .== 1, :]
+    # Drop non-selftargeting and those whom we don't have outcome data on
+    df = df[df.self .== 1, :]
+    df = clean(df, [:showup, :close], F64)
 
     # Store output
     μ_7,    r_7    = Vector{F64}(undef, 6), Vector{FixedEffectModel}(undef, 6)
     # R1: Logit
-    μ_7[1], r_7[1] = glm_clust(@formula(showup ~ close),
-                               clean(df, [:showup, :close], F64); clust = :hhea)
+    μ_7[1], r_7[1] = glm_clust(@formula(showup ~ close), df; clust = :hhea)
     # R2: Logit
     μ_7[2], r_7[2] = glm_clust(@formula(showup ~ close + logc + close_logc),
-                               clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
+                               clean(df, [:close_logc], F64); clust = :hhea)
     # R3: Logit
-    μ_7[3], r_7[3] = glm_clust(@formula(showup ~ close + inc2 + inc3 + inc4 + inc5 +
-                                        closeinc2 + closeinc3 + closeinc4 + closeinc5),
-                               clean(df, [:showup, :close, :inc2, :inc3, :inc4, :inc5, :closeinc2,
-                                          :closeinc3, :closeinc4, :closeinc5], F64); clust = :hhea)
+    μ_7[3], r_7[3] = glm_clust(@formula(showup ~ close + inc2 + inc3 + inc4 +
+                        inc5 + closeinc2 + closeinc3 + closeinc4 + closeinc5),
+                        clean(df, [:inc2, :inc3, :inc4, :inc5, :closeinc2,
+                        :closeinc3, :closeinc4, :closeinc5], F64); clust=:hhea)
 
     # Manually drop groups which fail positivity!
-    G_drop(v::Symbol, d::DataFrame) = findall(g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
-                                                  prod(d[d.kecagroup .== g, v] .== 1.0)),
-                                            unique(d.kecagroup))
-    df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(v, d),), :]
+    G_drop(v::Symbol, d)  = findall(g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
+                                        prod(d[d.kecagroup .== g, v] .== 1.0)),
+                                    unique(d.kecagroup))
+    df_drop(v::Symbol, d) = d[d.kecagroup .∉ (G_drop(v, d),), :]
 
     # R4: Conditional Logit
     μ_7[4], r_7[4] = glm_clust(@formula(showup ~ close + kecagroup),
-                               df_drop(:showup, clean(df, [:showup, :close], F64));
-                               group = :kecagroup, clust = :kecagroup)
+                               df_drop(:showup, df); group = :kecagroup,
+                               clust = :kecagroup)
     # R5: Conditional Logit
     μ_7[5], r_7[5] = glm_clust(@formula(showup ~ close + logc + close_logc + kecagroup),
-                               df_drop(:showup, clean(df, [:showup, :close, :logc, :close_logc], F64));
+                               df_drop(:showup, clean(df, [:logc, :close_logc], F64));
                                group = :kecagroup, clust = :kecagroup)
     # R6: Conditional Logit
     μ_7[6], r_7[6] = glm_clust(@formula(showup ~ close + inc2 + inc3 + inc4 + inc5 +
-                                        closeinc2 + closeinc3 + closeinc4 + closeinc5 + kecagroup),
-                               df_drop(:showup, clean(df, [:showup, :close, :inc2, :inc3, :inc4, :inc5,
+                                        closeinc2 + closeinc3 + closeinc4 + closeinc5 +
+                                        kecagroup),
+                               df_drop(:showup, clean(df, [:inc2, :inc3, :inc4, :inc5,
                                        :closeinc2, :closeinc3, :closeinc4, :closeinc5], F64));
                                group = :kecagroup, clust = :kecagroup)
     # Print output
