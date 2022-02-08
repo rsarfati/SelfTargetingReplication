@@ -58,21 +58,25 @@ end
 ###########################
 # Figure 2
 ###########################
-function figure_2(; labels::Dict{String,String} = labels)
+function figure_2(; labels::Dict{String,String} = labels,
+                    N_bs = 1000, α = 0.05, bootstrap = true)
     # Load and clean data
     df = rename!(DataFrame(load("input/matched_baseline.dta")),
                  [:logconsumption  => :logc])
     df = clean(df[df.selftargeting .== 1, :], [:logc, :showup, :hhea],
                out_t = Dict([:logc, :showup] .=> F64))
 
+    # Define grid of points at which to evaluate regression
     x0_grid = collect(range(11.25; stop = 15, length = 200))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid;
-                            clust = :hhea, bw = :cross_val)
 
-    p = plot(x0_grid, y_hat, legend = false, xrange = (11,15.25), yrange = (0,0.8),
-             xl = labels["logc"], yl = "Show-up Probability", lw = 2.0, lc = :cyan3)
+    # Run Fan regression on aforementioned grid
+    y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid; clust = :hhea,
+                            bw = :cross_val, α = α, bootstrap = bootstrap,
+                            N_bs = N_bs)
+    # Plot and save
+    p = plot(x0_grid, y_hat, legend = false, xrange=(11,15.25), yrange=(0,0.8),
+             xl = labels["logc"], yl = "Show-up Probability", lw=2., lc=:cyan3)
     plot!(p, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
-
     savefig(p, "output/plots/fig2.png")
     return p
 end

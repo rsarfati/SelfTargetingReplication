@@ -73,7 +73,7 @@ function glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
         return μ_r_y, FixedEffectModel(coef(r), vcov_i, gen_fields[3:end]...)
     else
         # Case: {Conditional Logit}
-        inds = 1:(try length(f.rhs) catch; 2 end) # Workaround for if 1-el tuple
+        inds = 1:(try length(f.rhs) catch; 2 end) # Fix for if 1-elmt tuple
         return μ_r_y, FixedEffectModel(coef(r)[inds], vcov_i[inds,inds],
                gen_fields[3:8]..., gen_fields[9][inds], gen_fields[10:end]...)
     end
@@ -110,6 +110,16 @@ function sup_t(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
 end
 
 """
+Manually drop groups which fail positivity!
+"""
+G_drop(d::DataFrame, v::Symbol) = findall(
+                         g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
+                             prod(d[d.kecagroup .== g, v] .== 1.0)),
+                             unique(d.kecagroup))
+df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
+
+
+"""
 ```
 function fan_reg(f::FormulaTerm, df::DataFrame; clust::Symbol=Symbol(),
                  N_grid = 50, N_bs = 100)
@@ -124,107 +134,119 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 compute_σ::Symbol = :analytic, N_bs = 1000, coef_ind = 2)
+                 bootstrap::Bool = true, N_bs = 1000, α::F64 = 0.05)
 
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
     N   = size(df, 1)
     N_g = length(x0_grid)
-    cluster_on = (clust == Symbol()) ? Vector() : df[:, clust]
 
     # Normal kernel:
     K_normal(z::F64) = (2*pi)^(-0.5) * exp(-z^2 / 2)
 
-    """
-    Local linear regression smoother (Fan 1992).
-    Keyword option for computing boostrap confidence intervals.
-    """
+    ########################################################
+    # Local linear regression smoother (Fan, 1992)
+    ########################################################
     function m_hat(X::Vector{F64}, Y::Vector{F64}, x0::F64, h::F64;
-                   K::Function = K_normal, compute_σ::Symbol = :analytic,
-                   cluster_on::Vector = Vector(), N_bs::Int64 = 1000,
-                   save_w_ind::Int64 = 0, coef_ind::Int64 = 2)
+                   K::Function = K_normal, save_w_ind = 0, return_CI = false)
         # Eq 2.4
         s_n(l::Int64) = sum(( K.((x0 .- X) ./ h) .* abs.(x0 .- X) .^ l))
         # Eq 2.3
         w = K.((x0 .- X) ./ h) .* (s_n(2) .- (x0 .- X) .* s_n(1))
         # Eq 2.2
         m_x = sum(w .* Y) / (sum(w) + N^(-2))
-
-        # Alberto's lecture notes on local polynomial regression
-        Kx1 = K.((x0 .- X) ./ h)
-        i_sum = inv(sum([ Kx1[j] * (1 + X[j]^2) for j=1:N]))
-        Kx  = [i_sum * Kx1[i] .* (1 + x0 * X[i]) for i=1:N]
-
-        # Construct confidence bands
-        if compute_σ != :none
-            df_σ = DataFrame(:Y => Y, :X => X, :Kx => Kx)
-
+        # Per Alberto's lecture notes on local polynomial regression
+        Kx1   = K.((x0 .- X) ./ h)
+        i_sum = inv(sum([ Kx1[j] * (1 + X[j]^2)    for j=1:N]))
+        Kx    = [i_sum * Kx1[i] .* (1 + x0 * X[i]) for i=1:N]
+        # Flag used when computing optimal bandwidth
+        if save_w_ind > 0
+            return m_x, Kx[save_w_ind]
+        # Returns analytically evaluated confidence bounds
+        elseif return_CI
+            df_σ = DataFrame(:Y => Y, :X => X, :Kx => w)
             # Case: not clustering SEs
-            r_σ = if isempty(cluster_on)
+            r_σ = if (clust == Symbol())
                 reg(df_σ, @formula(Y ~ X), weights = :Kx)
             # Case: clustering SEs
             else
-                df_σ = insertcols!(df_σ, clust => cluster_on)
+                df_σ = insertcols!(df_σ, clust => df[:, clust])
                 reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx)
             end
-            # Choose your poison constructing confidence 95% confidence bands
-            bl, bu = if compute_σ == :bootstrap
-                V = vcov(r_σ)
-                bs_σ(V; draws = N_bs, ind = 2)
-            elseif compute_σ == :analytic
-                b = stderror(r_σ)[coef_ind]
-                if b !== 0
-                    -b, b
-                else
-                    NaN, NaN
-                end
-            else
-                @error "Implemented CIs limited to {:bootstrap, :analytic}."
-            end
-            lb_i = m_x + bl
-            ub_i = m_x + bu
-            return m_x, lb_i, ub_i
+            b = stderror(r_σ)[2]
+            bl, bu = (b !== 0) ? (m_x-b, m_x+b) : (NaN, NaN)
+            return m_x, bl, bu
         else
-            if save_w_ind > 0
-                m_x, Kx[save_w_ind]
-            else
-                return m_x, 0.0, 0.0
-            end
+            return m_x, 0., 0.
         end
     end
-
+    ########################################################
     # Select bandwidth (if not given as input)
+    ########################################################
     h0 = if typeof(bw) <: F64
         bw
     else
+        println("(Fig. 2) Selecting optimal bandwidth via cross-validation...")
         # Normal reference rule / Silverman's rule of thumb
-        if bw == :norm_ref
+        if     bw == :norm_ref
             min(std(X), iqr(X) / 1.349) * N^(-1/5)
-        # 1-Nth of total distance (used by Stata command?)
+        # 1/Nth of total distance (used by Stata function)
         elseif bw == :tot_dist
             (maximum(X) - minimum(X)) / N
         # Choose h0 by cross-validation method (Stone 1977)
         elseif bw == :cross_val
+            # Function computes cross-validated MSE
             function CV(h_test)
                 m_i, w_i = zeros(N), zeros(N)
                 for i=1:N
-                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; compute_σ=:none,
-                                           save_w_ind=i, coef_ind=coef_ind)
+                    m_i[i], w_i[i] = m_hat(X, Y, X[i], h_test; save_w_ind = i)
                 end
                 return sum(((Y .- m_i) ./ (1 .- w_i)).^2)
             end
+            # Enumerate grid of possible values for bandwidth
             h_grid = collect(range(0.25, stop = x0_grid[end]/5, length = 30))
+            # Choose bandwidth which minimizes cross-validated MSE
             h_grid[argmin(CV.(h_grid))]
         else
-            @error "Provided bandwidth selection method invalid -- check input!"
+            @error "(Fig. 2) Bandwidth selection method invalid -- check argument!"
         end
     end
-
-    # Compute m_hat over grid of x's
+    ########################################################
+    # Run Fan regression (computes m_hat over grid of x's)
+    ########################################################
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
-        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; N_bs = N_bs,
-            cluster_on = cluster_on, compute_σ = compute_σ, coef_ind = coef_ind)
+        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; return_CI = !bootstrap)
+    end
+    ########################################################
+    # Bootstrap confidence bands
+    ########################################################
+    if bootstrap
+        println("(Fig. 2) Bootstrapping standard errors! " *
+                "Default N_bs = 1000 takes ~1 min; think of a happy memory " *
+                "while you're waiting.")
+        # Store bootstrapped Fan regressions
+        m_hat_bs = Matrix{F64}(undef, N_bs, N_g)
+        # Extract values to cluster on
+        clust_on = (clust == Symbol()) ? Vector() : df[:, clust]
+        N_c = unique(clust_on)
+        # Bootstrap!!!!!!!!
+        for i=1:N_bs
+            # Case: Clustering
+            idx_bs = if clust != Symbol()
+                bs_clust = sample(N_c, length(N_c); replace = true)
+                vcat([findall(isequal(c), df[:,clust]) for c in bs_clust]...)
+            # Case: No clustering
+            else
+                sample(1:N, N; replace = true)
+            end
+            # Evaluate Fan regression for each bootstrapped sample
+            for j=1:N_g
+                m_hat_bs[i,j],_,_ = m_hat(X[idx_bs], Y[idx_bs], x0_grid[j], h0)
+            end
+        end
+        lb = quantile.([m_hat_bs[:,j] for j=1:N_g],    α/2)
+        ub = quantile.([m_hat_bs[:,j] for j=1:N_g], 1-(α/2))
     end
     return y_hat, lb, ub
 end

@@ -174,13 +174,6 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     insertcols!(df, :logc_ST => df.logc .* df.self)
     df = clean(df, [:self], F64)
 
-    # Manually drop groups which fail positivity!
-    G_drop(d::DataFrame,
-           v::Symbol) = findall(g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
-                                    prod(d[d.kecagroup .== g, v] .== 1.0)),
-                                unique(d.kecagroup))
-    df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
-
     # Run conditional logit regressions, clustering at stratum level
     μ_5b[3], r_5b[3] = glm_clust(@formula(get ~ self + logc + logc_ST + kecagroup),
                     df_drop(:get, clean(df, [:get,:logc,:logc_ST,:kecagroup], F64));
@@ -274,30 +267,28 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                         reg(df[df.benefit_hyp .== 1, :],
                             @formula(logc ~ self + fe(kecagroup)), cluster(:hhea))
 
-    # Manually drop groups which fail positivity!
-    G_drop(v::Symbol, d::DataFrame) = findall(g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
-                                                  prod(d[d.kecagroup .== g, v] .== 1.0)),
-                                              unique(d.kecagroup))
-    df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(v, d),), :]
-
     # approx match; N agrees, SE sort of differ
     μ_6b[2], r_6b[2] = glm_clust(@formula(benefit_hyp ~ self + logc + logc_ST + kecagroup),
-                                 df_drop(:benefit_hyp, clean(df, [:benefit_hyp, :logc, :self,
-                                                                 :logc_ST, :kecagroup], F64));
+                                 df_drop(:benefit_hyp,
+                                         clean(df, [:benefit_hyp, :logc, :self,
+                                                    :logc_ST, :kecagroup], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     μ_6b[3], r_6b[3] = glm_clust(@formula(mistarget_hyp ~ self + kecagroup),
-                                 df_drop(:mistarget_hyp, clean(df, [:mistarget_hyp, :self], F64));
+                                 df_drop(:mistarget_hyp,
+                                         clean(df, [:mistarget_hyp, :self], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     # I get a WAY different value here. Does it have to do with the fact that I drop missings before I determine
     # whether outcomes are all positives or all negatives?
     μ_6b[4], r_6b[4] = glm_clust(@formula(excl_err_hyp ~ self + kecagroup),
-                                 df_drop(:excl_err_hyp, clean(df, [:excl_err_hyp], F64));
+                                 df_drop(:excl_err_hyp,
+                                         clean(df, [:excl_err_hyp], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     μ_6b[5], r_6b[5] = glm_clust(@formula(incl_err_hyp ~ self + kecagroup),
-                                 df_drop(:incl_err_hyp, clean(df, [:incl_err_hyp, :self], F64));
+                                 df_drop(:incl_err_hyp,
+                                         clean(df, [:incl_err_hyp, :self], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     # Print output
@@ -354,26 +345,23 @@ function table_7(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                         clean(df, [:inc2, :inc3, :inc4, :inc5, :closeinc2,
                         :closeinc3, :closeinc4, :closeinc5], F64); clust=:hhea)
 
-    # Manually drop groups which fail positivity!
-    G_drop(v::Symbol, d)  = findall(g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
-                                        prod(d[d.kecagroup .== g, v] .== 1.0)),
-                                    unique(d.kecagroup))
-    df_drop(v::Symbol, d) = d[d.kecagroup .∉ (G_drop(v, d),), :]
-
     # R4: Conditional Logit
     μ_7[4], r_7[4] = glm_clust(@formula(showup ~ close + kecagroup),
                                df_drop(:showup, df); group = :kecagroup,
                                clust = :kecagroup)
     # R5: Conditional Logit
     μ_7[5], r_7[5] = glm_clust(@formula(showup ~ close + logc + close_logc + kecagroup),
-                               df_drop(:showup, clean(df, [:logc, :close_logc], F64));
+                               df_drop(:showup,
+                                       clean(df, [:logc, :close_logc], F64));
                                group = :kecagroup, clust = :kecagroup)
     # R6: Conditional Logit
-    μ_7[6], r_7[6] = glm_clust(@formula(showup ~ close + inc2 + inc3 + inc4 + inc5 +
-                                        closeinc2 + closeinc3 + closeinc4 + closeinc5 +
-                                        kecagroup),
-                               df_drop(:showup, clean(df, [:inc2, :inc3, :inc4, :inc5,
-                                       :closeinc2, :closeinc3, :closeinc4, :closeinc5], F64));
+    μ_7[6], r_7[6] = glm_clust(@formula(showup ~ close + inc2 + inc3 + inc4 +
+                                        inc5 + closeinc2 + closeinc3 +
+                                        closeinc4 + closeinc5 + kecagroup),
+                               df_drop(:showup,
+                                       clean(df, [:inc2, :inc3, :inc4, :inc5,
+                                                  :closeinc2, :closeinc3,
+                                                  :closeinc4, :closeinc5], F64));
                                group = :kecagroup, clust = :kecagroup)
     # Print output
     mystats = NamedTuple{(:comments, :means)}((["No","No","No","Yes","Yes","Yes"], μ_7))
