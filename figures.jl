@@ -72,7 +72,7 @@ function figure_2(; labels::Dict{String,String} = labels,
     # Run Fan regression on aforementioned grid
     y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid; clust = :hhea,
                             bw = :cross_val, α = α, bootstrap = bootstrap,
-                            N_bs = N_bs)
+                            N_bs = N_bs, caller_id = "Fig. 2")
     # Plot and save
     p = plot(x0_grid, y_hat, legend = false, xrange=(11,15.25), yrange=(0,0.8),
              xl = labels["logc"], yl = "Show-up Probability", lw=2., lc=:cyan3)
@@ -93,7 +93,8 @@ function figure_3(; labels::Dict{String,String} = labels)
 
     # Observable component of log consumption
     x0_grid = collect(range(11.5; stop = 14.5, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid; clust = :hhea, bw=:cross_val)
+    y_hat, ub, lb = fan_reg(@formula(showup ~ PMTSCORE), df, x0_grid;
+                            clust = :hhea, bw = :cross_val, caller_id = "Fig. 3a")
 
     pA = plot(x0_grid, y_hat, legend = false, xrange = (11.4, 15), yrange = (0., 0.8),
               xl = "Observable Component of Log Consumption (PMT Score)",
@@ -107,7 +108,8 @@ function figure_3(; labels::Dict{String,String} = labels)
 
     # Unobservable component of log consumption
     x0_grid = collect(range(-1.75; stop = 1.75, length = 100))
-    y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea, bw=:cross_val)
+    y_hat, ub, lb = fan_reg(@formula(showup ~ eps), df, x0_grid; clust = :hhea,
+                            bw = :cross_val, caller_id = "Fig. 3b")
 
     pB = plot(x0_grid, y_hat, legend = false, xrange = (-2, 2), yrange = (0., 0.8),
               xl = "Unobservable Component of Log Consumption",

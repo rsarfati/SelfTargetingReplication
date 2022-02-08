@@ -134,8 +134,8 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 bootstrap::Bool = true, N_bs = 1000, α::F64 = 0.05)
-
+                 bootstrap = true, N_bs = 1000, α = 0.05, caller_id = "")
+    id  = (caller_id != "") ? "($(caller_id)) " : ""
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
     N   = size(df, 1)
@@ -186,7 +186,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     h0 = if typeof(bw) <: F64
         bw
     else
-        println("(Fig. 2) Selecting optimal bandwidth via cross-validation...")
+        println("$(id)Selecting optimal bandwidth via cross-validation...")
         # Normal reference rule / Silverman's rule of thumb
         if     bw == :norm_ref
             min(std(X), iqr(X) / 1.349) * N^(-1/5)
@@ -208,7 +208,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
             # Choose bandwidth which minimizes cross-validated MSE
             h_grid[argmin(CV.(h_grid))]
         else
-            @error "(Fig. 2) Bandwidth selection method invalid -- check argument!"
+            @error "$(id)Bandwidth selection method invalid -- check argument!"
         end
     end
     ########################################################
@@ -222,7 +222,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     # Bootstrap confidence bands
     ########################################################
     if bootstrap
-        println("(Fig. 2) Bootstrapping standard errors! " *
+        println("$(id)Bootstrapping standard errors! " *
                 "Default N_bs = 1000 takes ~1 min; think of a happy memory " *
                 "while you're waiting.")
         # Store bootstrapped Fan regressions
