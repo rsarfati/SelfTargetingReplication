@@ -51,7 +51,7 @@ function figure_1(; labels::Dict{String,String} = labels, bins::Int64 = 0)
                     yl = "(Pred.) Probability to Receive Benefits",
                     xrange = (11,15), yrange = (0,1))
     Plots.savefig(p2, "output/plots/fig1B.png")
-
+    println("(Fig. 1) ✅")
     return df, p1, p2
 end
 
@@ -78,6 +78,7 @@ function figure_2(; labels::Dict{String,String} = labels,
              xl = labels["logc"], yl = "Show-up Probability", lw=2., lc=:cyan3)
     plot!(p, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
     savefig(p, "output/plots/fig2.png")
+    println("(Fig. 2) ✅")
     return p
 end
 
@@ -101,6 +102,7 @@ function figure_3(; labels::Dict{String,String} = labels)
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pA, x0_grid, [lb, ub], ls = :dash, lw = 1.5, lc = :cyan4)
     Plots.savefig(pA, "output/plots/fig3A.png")
+    println("(Fig. 3a) ✅")
 
     # Compute residual unobservable consumption
     r = reg(df, @formula(logc ~ PMTSCORE), cluster(:hhea), save = :residuals)
@@ -115,6 +117,7 @@ function figure_3(; labels::Dict{String,String} = labels)
               yl = "Show-up Probability", lw = 2, lc = :cyan3)
     plot!(pB, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
     Plots.savefig(pB, "output/plots/fig3B.png")
+    println("(Fig. 3b) ✅")
 
     return pA, pB
 end
@@ -162,7 +165,7 @@ function figure_4(; labels::Dict{String,String} = labels)
     plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
 
     Plots.savefig(pB, "output/plots/fig4B.png")
-
+    println("(Fig. 4) ✅")
     return pA, pB
 end
 
@@ -198,9 +201,11 @@ function figure_5(; labels::Dict{String,String} = labels)
 
     # Run both Fan regressions
     y1, u1, l1 = fan_reg(@formula(getbenefit_hyp ~ logc),
-                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea, bw = 0.18)
+                         df[df.maintreatment.==1,:], x0_grid; clust = :hhea,
+                         bw = 0.18, caller_id = "Fig. 5")
     y2, u2, l2 = fan_reg(@formula(getbenefit_hyp ~ logc),
-                         df[df.maintreatment.==2,:], x0_grid; clust = :hhea, bw = 0.2)
+                         df[df.maintreatment.==2,:], x0_grid; clust = :hhea,
+                         bw = 0.2, caller_id = "Fig. 5")
 
     pB = plot(x0_grid, y1, legend = :topright, xrange = (11, 15.5), yrange = (0., 0.4),
               xl = "Log Consumption", yl = "Probability to Receive Benefits",
@@ -210,6 +215,7 @@ function figure_5(; labels::Dict{String,String} = labels)
     plot!(pB, x0_grid, [l2, u2], lw = 1.5, lc = :cyan4, label="", ls=:dash)
 
     Plots.savefig(pB, "output/plots/fig5B.png")
+    println("(Fig. 5) ✅")
     return pA, pB
 end
 
@@ -222,18 +228,18 @@ function figure_6(; labels::Dict{String,String} = labels)
                [:consumption  => :c]), Dict([:c, :totcost_pc] .=> F64))
     # Confirm concavity of graph
     insertcols!(df, :c2 => df.c .^ 2)
-    r = reg(df,                    @formula(totcost_pc ~ c + c2))
+    r = reg(df,                @formula(totcost_pc ~ c + c2))
     r = reg(df[df.c .< 2e6,:], @formula(totcost_pc ~ c + c2))
 
     x0_grid = collect(range(0; stop = 4.1e6, length = 100))
     y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea,
-                            coef_ind = 1, bw = 4e5)
-
+                            bw=4e5, bootstrap=false, caller_id = "Fig. 6", b_ind=1)
     # Plot Fan regression
     p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4.2e6), yrange = (0, 6e4),
              xl = "Per Capita Consumption", yl = "Total Costs per Capita",
              lw = 2, lc = :cyan3)
     plot!(p, x0_grid, [lb, ub], ls=:dash, lw = 1.5, lc = :cyan4)
     Plots.savefig(p, "output/plots/fig6.png")
+    println("(Fig. 6) ✅")
     return p
  end

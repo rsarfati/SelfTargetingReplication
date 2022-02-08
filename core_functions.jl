@@ -134,7 +134,8 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 bootstrap = true, N_bs = 1000, α = 0.05, caller_id = "")
+                 bootstrap = true, b_ind=2, N_bs = 1000, α = 0.05, caller_id = "")
+
     id  = (caller_id != "") ? "($(caller_id)) " : ""
     X   = df[:, Symbol(f.rhs)]
     Y   = df[:, Symbol(f.lhs)]
@@ -174,7 +175,7 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                 df_σ = insertcols!(df_σ, clust => df[:, clust])
                 reg(df_σ, @formula(Y ~ X), cluster(clust), weights = :Kx)
             end
-            b = stderror(r_σ)[2]
+            b = stderror(r_σ)[b_ind]
             bl, bu = (b !== 0) ? (m_x-b, m_x+b) : (NaN, NaN)
             return m_x, bl, bu
         else
