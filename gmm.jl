@@ -123,8 +123,9 @@ function showuphat(df::DataFrame, t::Vector{T}, η_sd::T, δ::T, μ_con_true::T,
 
     # Rather than running probit, apply WLS...
     # Calculate inverse of μ, Φ^{-1}(μ), where Φ is standard normal CDF
-    μ_inv = const_t .* (μ_con_true .+ df.FE2 .+ μ_β_true .* df.pmt)
-    X     = hcat(sqrt.(showup_hat), const_t .* df.logc)
+    conv  = sqrt.(showup_hat)
+    μ_inv = conv .* (μ_con_true .+ df.FE2 .+ μ_β_true .* df.pmt)
+    X     = hcat(conv, conv .* df.logc)
     σ2    = sqrt(sum(((eye(N) - X / (X' * X) * X') * μ_inv) .^ 2) / (N - 2))
     # Divide by σ2 to impose sd = 1 for error
     coef  = (1. / σ2) * (X' * X) \ X' * μ_inv

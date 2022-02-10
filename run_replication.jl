@@ -63,6 +63,7 @@ table_kwargs = Dict(:labels => labels,
 
 # Load helper functions
 include("core_functions.jl")
+include("gmm.jl")
 
 # Functions which produce tables and figures
 include("tables.jl")
@@ -77,15 +78,14 @@ table_6()
 table_7()
 
 ### Run GMM estimation, generate tables
-include("gmm.jl")
 table_8()
 # table_9()
 # table_10()
 
 ###### Figures #######
-# figure_1()
-# figure_2()
-# figure_3()
-# figure_4()
-# figure_5()
-# figure_6()
+figure_1()
+figure_2()
+figure_3()
+figure_4()
+figure_5()
+figure_6()

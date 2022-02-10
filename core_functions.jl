@@ -99,14 +99,49 @@ end
 
 """
 ```
-function sup_t(vcov::Matrix{T}, conf::F64; draws=10000) where T<:F64
+bootstrap(df::DataFrame, f::Function; N_bs = 1000, α::F64 = 0.05,
+          clust::Symbol = Symbol(), domain::Vector{F64} = Vector(),
+          id::String = "")
 ```
-Helper function to implement sup-t confidence bands.
 """
-function sup_t(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
-    N = size(V, 1)
-    d = MvNormal(zeros(N), V)
-    return quantile(vec(maximum(abs.(rand(d, draws)), dims = 2)), conf)
+function bootstrap(df::DataFrame, f::Function; N_bs::Int64 = 1000, α::T = 0.05,
+                   clust::Symbol = Symbol(), domain::Vector{T} = Vector(),
+                   id::String = "") where T<:F64
+
+    # If pass symbol to cluster on, extract values on which to cluster
+    clustering = (clust != Symbol())
+    clust_set  = clustering ? unique(df[:, clust]) : Vector()
+
+    # Is evaluated function applied to domain? (e.g. Fan regression grid)
+    N_x = length(domain)
+
+    # Store bootstrapped output
+    all_bs = (N_x==0) ? Vector{F64}(undef, N_bs) :
+                         Array{F64}(undef, N_bs, N_g)
+
+    ## Run bootstrap iterations!
+    for i=1:N_bs
+
+        # Sample at cluster-level, include all obs. w/in cluster in sample
+        idx_bs = if clustering
+            bs_clust = sample(N_c, length(N_c); replace = true)
+            vcat([findall(isequal(c), df[:,clust]) for c in bs_clust]...)
+        # No clustering
+        else
+            sample(1:N, N; replace = true)
+        end
+
+        # Evaluate directly OR
+        (N_x == 0) ?        all_bs[i]   = f(df[idx_bs,:]) :
+            # ... evaluate function over provided domain
+            for j=1:N_x;    all_bs[i,j] = f(df[idx_bs,:], domain[j]) end
+    end
+    if N_x == 0
+        return quantile(all_bs, α/2), quantile(all_bs, 1 - (α/2))
+    else
+        return quantile.([m_hat_bs[:,j] for j=1:N_g],    α/2),
+               quantile.([m_hat_bs[:,j] for j=1:N_g], 1-(α/2))
+    end
 end
 
 """
@@ -258,7 +293,11 @@ Helper to coerce DataFrame types to desired format.
 """
 function convert_types(df, colstypes)
     for (c, t) in colstypes
-        df[!, c] = convert.(t, df[!, c])
+        df[!, c] = if typeof(df[findfirst(!ismissing,df[:,c]),c]) == String
+            convert.(t, parse.(t, df[!, c]))
+        else
+            convert.(t, df[!, c])
+        end
     end
     return df
 end

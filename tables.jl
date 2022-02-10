@@ -276,10 +276,11 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     μ_6b[3], r_6b[3] = glm_clust(@formula(mistarget_hyp ~ self + kecagroup),
                                  df_drop(:mistarget_hyp,
-                                         clean(df, [:mistarget_hyp, :self], F64));
+                                         clean(df,[:mistarget_hyp,:self],F64));
                                  group = :kecagroup, clust = :kecagroup)
 
-    # I get a WAY different value here. Does it have to do with the fact that I drop missings before I determine
+    # I get a WAY different value here. Does it have to do with the fact that I
+    # drop missings before I determine
     # whether outcomes are all positives or all negatives?
     μ_6b[4], r_6b[4] = glm_clust(@formula(excl_err_hyp ~ self + kecagroup),
                                  df_drop(:excl_err_hyp,
@@ -293,13 +294,13 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  5), μ_6a))
-    regtable(r_6a...; renderSettings = latexOutput("output/tables/Table6_NoStratumFEs.tex"),
-             regressors = ["self", "logc", "logc_ST"],
+    regtable(r_6a...; regressors = ["self", "logc", "logc_ST"],
+             renderSettings = latexOutput("output/tables/Table6_NoStratumFEs.tex"),
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 5), μ_6b))
-     regtable(r_6b...; renderSettings = latexOutput("output/tables/Table6_StratumFEs.tex"),
-     		  regressors = ["self", "logc", "logc_ST"],
+     regtable(r_6b...; regressors = ["self", "logc", "logc_ST"],
+              renderSettings = latexOutput("output/tables/Table6_StratumFEs.tex"),
               custom_statistics = mystats, table_kwargs...)
 
     return μ_6a, r_6a, μ_6b, r_6b
@@ -390,20 +391,22 @@ function table_8(; run_estimation = true, run_bootstrap = true,
     else
         run_estimation = !have_est
         run_bootstrap  = !have_bs
-        println("NOTE on Table 8: You have set the keyword overwrite_output = false.\n\n" *
-                "Even if you have set run_{estimation, bootstrap} = true, "  *
-                "these flags will be ignored if the corresponding output file already " *
+        println("(Table 8) NOTE: You have set the keyword overwrite_output = " *
+                "false.\n\nEven if run_{estimation, bootstrap} = true, these " *
+                "flags will be ignored if the corresponding output file already " *
                 "exists in your output/ directory. (Overwriting is set to false " *
-                "by default so you don't do something you regret.) If you wish to " *
-                "proceed, re-run this command with overwrite_output = true, or " *
-                "rename/move the existing files for safe-keeping. \n")
+                "by default so you don't do something you regret.) If you wish "  *
+                "to proceed, re-run this command with overwrite_output = true, "  *
+                "or rename/move the existing file(s) for safe-keeping. \n")
     end
-    println("* For reference, you currently" * (have_est ? " DO " : " DO NOT ") * "have an " *
-            "output estimation file, and" * (have_bs ? " DO " : " DO NOT ") *
-            "have an output bootstrap file. *")
+    println("✨ For reference, you currently " *
+                    (have_est ? "✅ DO " : " ⛔ DO NOT ") *
+            "have an output estimation file, and " *
+                    (have_bs  ? "✅ DO " : " ⛔ DO NOT ") *
+            "have an output bootstrap file. ✨\n")
     if !(run_estimation | have_est) | !(run_bootstrap | have_bs)
-        println("\n Since one or more of the above files does not exist and you aren't " *
-                "presently indicating the intention to generate it, you're going to be " *
+        println("Since one or more of the above files does not exist, and you " *
+                "aren't indicating intent to generate it, you're going to be " *
                 "hitting an error building your LaTeX table in T - 1, 2, ...")
     end
     estimation_1(; run_estimation = run_estimation, run_bootstrap = run_bootstrap,
@@ -419,7 +422,7 @@ function counterfactuals_1(; N_grid = 100)
     df = rename!(df, [:closesubtreatment => :close, :consumption => :c,
                       :pmtscore => :pmt])
     df = clean(df, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
-    # Compute unobs. consumption (residual regressing log(obs consumption) on PMT)
+    # Compute unobs. consumption (residual regressing log(obs cons) on PMT)
     df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
     # Corresponds to "load data" step
     df = compute_quantiles(df)
@@ -440,21 +443,25 @@ function counterfactuals_1(; N_grid = 100)
     df_show_hat = DataFrame([:hhid => df.hhid, :c_q => df.c_q])
 
     # Column 2: Baseline estimate of show_hat
-    insertcols!(df_show_hat, :col2 => showuphat(df, t, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+    insertcols!(df_show_hat, :col2 =>
+        showuphat(df, t, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
     # Column 3: Half Standard deviation of epsilon
     t_3 = [t[1], t[2]/2, t[3:5]...]
-    insertcols!(df_show_hat, :col3 => showuphat(df, t_3, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+    insertcols!(df_show_hat, :col3 =>
+        showuphat(df, t_3, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
     # Column 4: No epsilon variance
     t_4 = [t[1], t[2]/1e10, t[3:5]...]
-    insertcols!(df_show_hat, :col4 => showuphat(df, t_4, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+    insertcols!(df_show_hat, :col4 =>
+        showuphat(df, t_4, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
     # Column 5: No differential travel cost
     df_5 = deepcopy(df)
     df_5.totcost_pc = df.totcost_smth_pc
-    insertcols!(df_show_hat, :col5 => showuphat(df_5, t, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+    insertcols!(df_show_hat, :col5 =>
+        showuphat(df_5, t, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
 
     # Column 6: (constant mu AND lambda)
     mean_mu = 0.0967742 # Mean benefit receipt conditional on applying
@@ -507,8 +514,8 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     # Load + clean data
     df = DataFrame(load("input/matched_baseline.dta"))
     df = insertcols!(df, :logc => log.(df.consumption))
-    df = rename!(df, [:closesubtreatment => :close,
-                      :verypoor_povertyline1 => :poor])
+    df = rename!(clean(df, [:hhid], Int64),
+                 [:closesubtreatment => :close, :verypoor_povertyline1 => :below])
 
     # Run scenarios if one has not done so already, or wishes to do so again!
     scenarios_file = "output/MATLAB_table9_showup.csv"
@@ -521,48 +528,64 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     df = innerjoin(df, df_show, on = :hhid)
 
     # Clean merged data for missing values, define interactions for Panel B
-    df = clean(df, [:logc, :close, :poor], F64)
-    insertcols!(df, :close_logc  =>   df.logc  .*   df.close,
-                    :close_poor  =>   df.close .*   df.poor,
-                    :close_above =>   df.close .* .!df.poor,
-                    :far_poor    => .!df.close .*   df.poor,
-                    :far_above   => .!df.close .* .!df.poor)
-
-    ### Store output (Panel A)
-    r_9a = Vector{FixedEffectModel}(undef, 6)
-    _, r_9a[1] = glm_clust(@formula(showup ~ close + logc + close_logc),
-                               clean(df, [:showup], F64); clust = :hhea)
-    # for i=2:6
-    #     _, r_9a[i] = glm_clust(@formula(Symbol("col$(i)") ~ close + logc + close_logc),
-    #                               clean(df, [Symbol("col$(i)")], F64); clust = :hhea)
-    # end
-
-    # _, r_9a[2] = glm_clust(@formula(col2 ~ close + logc + close_logc),
-    #                           clean(df, [:col2, :close, :close_logc], F64); clust = :hhea)
-    # # R3: Logit
-    # _, r_9a[2] = glm_clust(@formula(col3 ~ close + logc + close_logc),
-    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
-    # #
-    # _, r_9a[2] = glm_clust(@formula(col4 ~ close + logc + close_logc),
-    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
-    # #
-    # _, r_9a[2] = glm_clust(@formula(col5 ~ close + logc + close_logc),
-    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
-    # #
-    # _, r_9a[2] = glm_clust(@formula(col6 ~ close + logc + close_logc),
-    #                           clean(df, [:showup, :close, :close_logc], F64); clust = :hhea)
-
-    ### Store output (Panel B)
-    r_9b = Vector{Vector{F64}}(undef, 4)
+    df = clean(df, [:logc, :close, :below], F64)
+    insertcols!(df, :close_logc  =>        df.logc   .*        df.close,
+                    :close_below =>        df.close  .*        df.below,
+                    :close_above =>        df.close  .* iszero(df.below),
+                    :far_below   => iszero(df.close) .*        df.below,
+                    :far_above   => iszero(df.close) .* iszero(df.below))
     outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
-    groups   = [:far_above, :close_above, :far_below, :close_poor]
+    groups   = [:far_above, :close_above, :far_below, :close_below]
+
+    ### Panel A: Store output
+    function BS_reg(arg::Symbol; N_bs = 1000)
+        r = glm_clust(eval(Meta.parse("@formula($(string(arg))" *
+                                          " ~ close + logc + close_logc)")),
+				      clean(df, [arg], F64); clust = :hhea)[2]
+    end
+    r_9a = [BS_reg(o) for o in outcomes]
+
+
+    # r_9a = Vector{FixedEffectModel}(undef, 6)
+    # _, r_9a[1] = glm_clust(@formula(showup ~ close + logc + close_logc),
+    #                            clean(df, [:showup], F64); clust = :hhea)
+
+
+
+    # # Col. 2: Baseline estimate of show_hat
+    # r_9a[2] = BS_reg(:col2) #glm_clust(@formula(col2 ~ close + logc + close_logc),
+    # #                           clean(df, [:col2], F64); clust = :hhea)
+    @show r_9a[2]
+    # # Col. 3: Half Standard deviation of epsilon
+    # _, r_9a[3] = glm_clust(@formula(col3 ~ close + logc + close_logc),
+    #                           clean(df, [:col3], F64); clust = :hhea)
+    # # Col. 4: No epsilon variance
+    # _, r_9a[4] = glm_clust(@formula(col4 ~ close + logc + close_logc),
+    #                           clean(df, [:col4], F64); clust = :hhea)
+    # # Col. 5: No differential travel cost
+    # _, r_9a[5] = glm_clust(@formula(col5 ~ close + logc + close_logc),
+    #                           clean(df, [:col5], F64); clust = :hhea)
+    # # Col. 6: Constant mu AND lambda
+    # _, r_9a[6] = glm_clust(@formula(col6 ~ close + logc + close_logc),
+    #                           clean(df, [:col6], F64); clust = :hhea)
+
+    ### Panel A: Bootstrapping SEs
+    # bootstrap(df, f; N_bs::Int64 = 1000, α::T = 0.05,
+    #                    clust::Symbol = Symbol(), domain::Vector{T} = Vector(),
+    #                    id::String = "")
+
+
+    ### Panel A: p-values
+
+    ### Panel B: Store output
+    r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
     for (i, g) in enumerate(groups)
-        for (i, out) in enumerate(outcomes)
-            r_9b[i][j] = (df[:,out] .* df[:,g]) / sum(df[:,g])
+        for (j, out) in enumerate(outcomes)
+            r_9b[i][j] = sum(df[:,out] .* df[:,g]) / sum(df[:,g])
         end
     end
 
-    ### Store output (Panel C)
+    ### Panel C: Store output
     r_9c = Vector{Vector{F64}}(undef, 3)
 
 
