@@ -1,27 +1,4 @@
 """
-Shortcut identity matrix.
-"""
-function eye(N::Int64)
-    return Matrix{F64}(I, N, N)
-end
-
-
-"""
-Trapezoidal integration w/ uniform grid!
-"""
-function trapz(f::Function, a::F64, b::F64, N_g::Int64)
-    integ = f(a) + f(b)
-    N_g -= 1
-    h = (b-a) / N_g
-    x = a
-    for j = 2:N_g
-        x     += h
-        integ += 2 * f(x)
-    end
-    return integ * h / 2
-end
-
-"""
 ```
 glm_clust(f::FormulaTerm, df::DataFrame; link::Link=LogitLink(),
           group::Symbol=Symbol(), clust::Symbol=Symbol(),
@@ -82,32 +59,16 @@ end
 
 """
 ```
-bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64=1000, ind = 2) where T<:F64
-```
-Bootstrap confidence intervals!
-"""
-function bs_σ(V::Matrix{T}; conf::T = 0.975, draws::Int64 = 1000,
-              ind::Int64 = 2) where T<:F64
-    # Define constants, gut-check inputs
-    N = size(V, 1)
-    @assert 0 < ind <= N "Provided `ind` doesn't correspond to valid " *
-                          "explanatory variable; check input."
-    return quantile(rand(MvNormal(zeros(N), V), draws)[ind,:], [1-conf, conf])
-end
-function bs_σ(V::T; conf::T = 0.975, draws::Int64 = 1000) where T<:F64
-    return quantile(abs.(rand(Normal(0, V), draws)), conf)
-end
-
-"""
-```
 bootstrap(df::DataFrame, f::Function; N_bs = 1000, α::F64 = 0.05,
           clust::Symbol = Symbol(), domain::Vector{F64} = Vector(),
           id::String = "")
 ```
+Returns Tuple of bootstrapped confidence intervals (out: lower [1], upper [2])
+and standard errors (out: [3]).
 """
-function bootstrap(df::DataFrame, f::Function; N_bs::Int64 = 1000, α::T = 0.05,
-                   clust::Symbol = Symbol(), domain::Vector{T} = Vector(),
-                   id::String = "") where T<:F64
+function bootstrap(df::DataFrame, f::Function; N_bs::Int64=1000, α::F64=0.05,
+                   multivar::Bool = false, clust::Symbol = Symbol(),
+                   domain::Vector{F64} = Vector{F64}(), id::String = "")
 
     # If pass symbol to cluster on, extract values on which to cluster
     clustering = (clust != Symbol())
@@ -116,10 +77,12 @@ function bootstrap(df::DataFrame, f::Function; N_bs::Int64 = 1000, α::T = 0.05,
     # Is evaluated function applied to domain? (e.g. Fan regression grid)
     N_x = length(domain)
 
-    # Store bootstrapped output
-    all_bs = (N_x==0) ? Vector{F64}(undef, N_bs) :
-                         Array{F64}(undef, N_bs, N_x)
-
+    # Store bootstrapped output; type of output depends on whether one is
+    # estimating multiple coefficients
+    T = (multivar ? Vector{F64} : F64)
+    all_bs = (N_x == 0) ? Vector{T}(undef, N_bs) :
+                           Array{T}(undef, N_bs, N_x)
+    # Wave to the audience
     (id!="") ? println("$(id)Running $(N_bs) boostrap iterations...") : nothing
 
     ## Run bootstrap iterations!
@@ -137,23 +100,18 @@ function bootstrap(df::DataFrame, f::Function; N_bs::Int64 = 1000, α::T = 0.05,
             # ... evaluate over provided domain
             for j=1:N_x;    all_bs[i,j] = f(df[idx_bs,:], domain[j]) end
     end
-    if N_x == 0
-        return quantile(all_bs, α/2), quantile(all_bs, 1 - (α/2))
+    # Return tuple or vector of tuples, respectively
+    if (N_x == 0) && !multivar
+        return quantile(all_bs, α/2), quantile(all_bs, 1-(α/2)), std(all_bs)
     else
-        return quantile.([all_bs[:,j] for j=1:N_x],    α/2),
-               quantile.([all_bs[:,j] for j=1:N_x], 1-(α/2))
+        out = if multivar
+            [[all_bs[i][j] for i=1:N_bs] for j=1:length(all_bs[1])]
+        else
+            [all_bs[:,j]    for j=1:N_x]
+        end
+        return quantile.(out,   α/2), quantile.(out,   1-(α/2)), std.(out)
     end
 end
-
-"""
-Manually drop groups which fail positivity!
-"""
-G_drop(d::DataFrame, v::Symbol) = findall(
-                         g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
-                             prod(d[d.kecagroup .== g, v] .== 1.0)),
-                             unique(d.kecagroup))
-df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
-
 
 """
 ```
@@ -170,7 +128,8 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 run_bootstrap = true, b_ind=2, N_bs = 1000, α = 0.05, caller_id = "")
+                 run_bootstrap = true, b_ind=2, N_bs = 1000, α = 0.05,
+                 caller_id = "")
 
     id  = (caller_id != "") ? "($(caller_id)) " : ""
     X   = df[:, Symbol(f.rhs)]
@@ -254,7 +213,8 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     ########################################################
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
-        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; return_CI = !run_bootstrap)
+        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0;
+                                       return_CI = !run_bootstrap)
     end
     ########################################################
     # Bootstrap confidence bands
@@ -263,45 +223,57 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
         println("$(id)Bootstrapping standard errors! " *
                 "Default N_bs = 1000 takes ~1 min; think of a happy memory " *
                 "while you're waiting.")
-
-        # Define function which one intends to bootstrap
-        bs_fun(df0::DataFrame, x0::Float64) = m_hat(df0[:,:X], df0[:,:Y], x0, h0)[1]
+        # Define function called during bootstrap iterations
+        bs_fun(df0::DataFrame, x0::F64) = m_hat(df0[:,:X], df0[:,:Y], x0, h0)[1]
         # Construct a minimally-sized DataFrame
         df_bs = DataFrame(:X => X, :Y => Y, clust => df[:,clust])
         # Run bootstrap!
-        lb, ub = bootstrap(df_bs, bs_fun; N_bs = N_bs, α = α, clust = clust,
-                            domain = x0_grid, id=id)
-        # # Store bootstrapped Fan regressions
-        # m_hat_bs = Matrix{F64}(undef, N_bs, N_g)
-        # # Extract values to cluster on
-        # clust_on = (clust == Symbol()) ? Vector() : df[:, clust]
-        # N_c = unique(clust_on)
-        # # Bootstrap!!!!!!!!
-        # for i=1:N_bs
-        #     # Case: Clustering
-        #     idx_bs = if clust != Symbol()
-        #         bs_clust = sample(N_c, length(N_c); replace = true)
-        #         vcat([findall(isequal(c), df[:,clust]) for c in bs_clust]...)
-        #     # Case: No clustering
-        #     else
-        #         sample(1:N, N; replace = true)
-        #     end
-        #     # Evaluate Fan regression for each bootstrapped sample
-        #     for j=1:N_g
-        #         m_hat_bs[i,j],_,_ = m_hat(X[idx_bs], Y[idx_bs], x0_grid[j], h0)
-        #     end
-        # end
-        # lb = quantile.([m_hat_bs[:,j] for j=1:N_g],    α/2)
-        # ub = quantile.([m_hat_bs[:,j] for j=1:N_g], 1-(α/2))
-
+        lb, ub, _ = bootstrap(df_bs, bs_fun; N_bs = N_bs, α = α, clust = clust,
+                              domain = x0_grid, id=id)
     end
     return y_hat, lb, ub
+end
+
+
+########################################
+# Methods for brevity
+########################################
+"""
+Shortcut identity matrix.
+"""
+function eye(N::Int64)
+    return Matrix{F64}(I, N, N)
+end
+
+"""
+```
+trapz(f::Function, a::F64, b::F64, N_g::Int64)
+```
+Trapezoidal integration w/ uniform grid!
+"""
+function trapz(f::Function, a::F64, b::F64, N_g::Int64)
+    integ = f(a) + f(b)
+    N_g -= 1
+    h = (b-a) / N_g
+    x = a
+    for j = 2:N_g
+        x     += h
+        integ += 2 * f(x)
+    end
+    return integ * h / 2
 end
 
 ########################################
 # Data Cleaning
 ########################################
-Base.parse(t::Type{String}, str::String) = str
+"""
+Manually drop groups which fail positivity!
+"""
+G_drop(d::DataFrame, v::Symbol) = findall(
+                         g->(prod(d[d.kecagroup .== g, v] .== 0.0) ||
+                             prod(d[d.kecagroup .== g, v] .== 1.0)),
+                             unique(d.kecagroup))
+df_drop(v::Symbol, d::DataFrame) = d[d.kecagroup .∉ (G_drop(d, v),), :]
 
 """
 Helper to coerce DataFrame types to desired format.
@@ -316,6 +288,7 @@ function convert_types(df, colstypes)
     end
     return df
 end
+Base.parse(t::Type{String}, str::String) = str
 
 """
 ```

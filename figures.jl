@@ -59,7 +59,7 @@ end
 # Figure 2
 ###########################
 function figure_2(; labels::Dict{String,String} = labels,
-                    N_bs = 1000, α = 0.05, bootstrap = true)
+                    N_bs = 1000, α = 0.05, run_bootstrap = true)
     # Load and clean data
     df = rename!(DataFrame(load("input/matched_baseline.dta")),
                  [:logconsumption  => :logc])
@@ -71,7 +71,7 @@ function figure_2(; labels::Dict{String,String} = labels,
 
     # Run Fan regression on aforementioned grid
     y_hat, ub, lb = fan_reg(@formula(showup ~ logc), df, x0_grid; clust = :hhea,
-                            bw = :cross_val, α = α, bootstrap = bootstrap,
+                            bw = :cross_val, α = α, run_bootstrap = run_bootstrap,
                             N_bs = N_bs, caller_id = "Fig. 2")
     # Plot and save
     p = plot(x0_grid, y_hat, legend = false, xrange=(11,15.25), yrange=(0,0.8),
@@ -233,7 +233,7 @@ function figure_6(; labels::Dict{String,String} = labels)
 
     x0_grid = collect(range(0; stop = 4.1e6, length = 100))
     y_hat, ub, lb = fan_reg(@formula(totcost_pc ~ c), df, x0_grid; clust = :hhea,
-                            bw=4e5, bootstrap=false, caller_id = "Fig. 6", b_ind=1)
+                            bw=4e5, run_bootstrap=false, caller_id = "Fig. 6", b_ind=1)
     # Plot Fan regression
     p = plot(x0_grid, y_hat, legend = false, xrange = (0, 4.2e6), yrange = (0, 6e4),
              xl = "Per Capita Consumption", yl = "Total Costs per Capita",

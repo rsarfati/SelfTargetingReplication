@@ -503,7 +503,7 @@ function counterfactuals_1(; N_grid = 100)
                                                  λ_con_true, λ_β_true; N_grid = N_grid)[1])
     t_11[3] = 1.0
     insertcols!(df_show_hat, :col12 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
-                                              λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
     CSV.write("output/MATLAB_table9_showup.csv", df_show_hat)
 end
 
@@ -539,14 +539,14 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
 
     ### Panel A: Store output
     function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 1000, id = "")
-
-
-        bs_fun(df0::DataFrame) = glm_clust(eval(Meta.parse("@formula($(string(arg))" *
-                                          " ~ close + logc + close_logc)")),
-				      clean(df0, [arg], F64); clust = :hhea)[2]
-        r = bs_fun(df)
-
-        lb, ub = bootstrap(df, bs_fun; N_bs=N_bs, α=0.05, clust = clust, id = id)
+        # Conform function to be bootstrapped so has correct input/output
+        fun(df0::DataFrame) = glm_clust(eval(Meta.parse(
+                       "@formula($(string(arg)) ~ close + logc + close_logc)")),
+				       clean(df0, [arg], F64); clust = :hhea)[2]
+        r    = fun(df)
+        r_se = bootstrap(df, d->coef(fun(d)); N_bs = N_bs, α = 0.05,
+                         multivar = true, clust = clust, id = id)[3]
+        return (coef(r), r_se)
     end
     r_9a = [panel_A_output(o) for o in outcomes]
     @show r_9a[2]
@@ -555,14 +555,15 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
     for (i, g) in enumerate(groups)
         for (j, out) in enumerate(outcomes)
-            r_9b[i][j] = sum(df[:,out] .* df[:,g]) / sum(df[:,g])
+            df_temp    = clean(df, [g, out], F64)
+            r_9b[i][j] = sum(df_temp[:,out] .* df_temp[:,g]) / sum(df_temp[:,g])
         end
     end
 
     ### Panel C: Store output
     r_9c = Vector{Vector{F64}}(undef, 3)
 
-
+    return r_9b
 end
 
 ###########################
