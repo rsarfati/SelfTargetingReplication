@@ -5,6 +5,7 @@ function eye(N::Int64)
     return Matrix{F64}(I, N, N)
 end
 
+
 """
 Trapezoidal integration w/ uniform grid!
 """
@@ -117,30 +118,30 @@ function bootstrap(df::DataFrame, f::Function; N_bs::Int64 = 1000, α::T = 0.05,
 
     # Store bootstrapped output
     all_bs = (N_x==0) ? Vector{F64}(undef, N_bs) :
-                         Array{F64}(undef, N_bs, N_g)
+                         Array{F64}(undef, N_bs, N_x)
+
+    (id!="") ? println("$(id)Running $(N_bs) boostrap iterations...") : nothing
 
     ## Run bootstrap iterations!
     for i=1:N_bs
-
         # Sample at cluster-level, include all obs. w/in cluster in sample
         idx_bs = if clustering
-            bs_clust = sample(N_c, length(N_c); replace = true)
+            bs_clust = sample(clust_set, length(clust_set); replace = true)
             vcat([findall(isequal(c), df[:,clust]) for c in bs_clust]...)
         # No clustering
         else
             sample(1:N, N; replace = true)
         end
-
-        # Evaluate directly OR
+        # Evaluate directly OR ...
         (N_x == 0) ?        all_bs[i]   = f(df[idx_bs,:]) :
-            # ... evaluate function over provided domain
+            # ... evaluate over provided domain
             for j=1:N_x;    all_bs[i,j] = f(df[idx_bs,:], domain[j]) end
     end
     if N_x == 0
         return quantile(all_bs, α/2), quantile(all_bs, 1 - (α/2))
     else
-        return quantile.([m_hat_bs[:,j] for j=1:N_g],    α/2),
-               quantile.([m_hat_bs[:,j] for j=1:N_g], 1-(α/2))
+        return quantile.([all_bs[:,j] for j=1:N_x],    α/2),
+               quantile.([all_bs[:,j] for j=1:N_x], 1-(α/2))
     end
 end
 
@@ -169,7 +170,7 @@ local linear regression.
 """
 function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
                  bw::Union{Symbol,F64} = :norm_ref, clust::Symbol = Symbol(),
-                 bootstrap = true, b_ind=2, N_bs = 1000, α = 0.05, caller_id = "")
+                 run_bootstrap = true, b_ind=2, N_bs = 1000, α = 0.05, caller_id = "")
 
     id  = (caller_id != "") ? "($(caller_id)) " : ""
     X   = df[:, Symbol(f.rhs)]
@@ -253,40 +254,54 @@ function fan_reg(f::FormulaTerm, df::DataFrame, x0_grid::Vector{F64};
     ########################################################
     y_hat, lb, ub = zeros(N_g), zeros(N_g), zeros(N_g)
     for i=1:N_g
-        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; return_CI = !bootstrap)
+        y_hat[i], lb[i], ub[i] = m_hat(X, Y, x0_grid[i], h0; return_CI = !run_bootstrap)
     end
     ########################################################
     # Bootstrap confidence bands
     ########################################################
-    if bootstrap
+    if run_bootstrap
         println("$(id)Bootstrapping standard errors! " *
                 "Default N_bs = 1000 takes ~1 min; think of a happy memory " *
                 "while you're waiting.")
-        # Store bootstrapped Fan regressions
-        m_hat_bs = Matrix{F64}(undef, N_bs, N_g)
-        # Extract values to cluster on
-        clust_on = (clust == Symbol()) ? Vector() : df[:, clust]
-        N_c = unique(clust_on)
-        # Bootstrap!!!!!!!!
-        for i=1:N_bs
-            # Case: Clustering
-            idx_bs = if clust != Symbol()
-                bs_clust = sample(N_c, length(N_c); replace = true)
-                vcat([findall(isequal(c), df[:,clust]) for c in bs_clust]...)
-            # Case: No clustering
-            else
-                sample(1:N, N; replace = true)
-            end
-            # Evaluate Fan regression for each bootstrapped sample
-            for j=1:N_g
-                m_hat_bs[i,j],_,_ = m_hat(X[idx_bs], Y[idx_bs], x0_grid[j], h0)
-            end
-        end
-        lb = quantile.([m_hat_bs[:,j] for j=1:N_g],    α/2)
-        ub = quantile.([m_hat_bs[:,j] for j=1:N_g], 1-(α/2))
+
+        # Define function which one intends to bootstrap
+        bs_fun(df0::DataFrame, x0::Float64) = m_hat(df0[:,:X], df0[:,:Y], x0, h0)[1]
+        # Construct a minimally-sized DataFrame
+        df_bs = DataFrame(:X => X, :Y => Y, clust => df[:,clust])
+        # Run bootstrap!
+        lb, ub = bootstrap(df_bs, bs_fun; N_bs = N_bs, α = α, clust = clust,
+                            domain = x0_grid, id=id)
+        # # Store bootstrapped Fan regressions
+        # m_hat_bs = Matrix{F64}(undef, N_bs, N_g)
+        # # Extract values to cluster on
+        # clust_on = (clust == Symbol()) ? Vector() : df[:, clust]
+        # N_c = unique(clust_on)
+        # # Bootstrap!!!!!!!!
+        # for i=1:N_bs
+        #     # Case: Clustering
+        #     idx_bs = if clust != Symbol()
+        #         bs_clust = sample(N_c, length(N_c); replace = true)
+        #         vcat([findall(isequal(c), df[:,clust]) for c in bs_clust]...)
+        #     # Case: No clustering
+        #     else
+        #         sample(1:N, N; replace = true)
+        #     end
+        #     # Evaluate Fan regression for each bootstrapped sample
+        #     for j=1:N_g
+        #         m_hat_bs[i,j],_,_ = m_hat(X[idx_bs], Y[idx_bs], x0_grid[j], h0)
+        #     end
+        # end
+        # lb = quantile.([m_hat_bs[:,j] for j=1:N_g],    α/2)
+        # ub = quantile.([m_hat_bs[:,j] for j=1:N_g], 1-(α/2))
+
     end
     return y_hat, lb, ub
 end
+
+########################################
+# Data Cleaning
+########################################
+Base.parse(t::Type{String}, str::String) = str
 
 """
 Helper to coerce DataFrame types to desired format.

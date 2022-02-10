@@ -538,44 +538,18 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     groups   = [:far_above, :close_above, :far_below, :close_below]
 
     ### Panel A: Store output
-    function BS_reg(arg::Symbol; N_bs = 1000)
-        r = glm_clust(eval(Meta.parse("@formula($(string(arg))" *
+    function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 1000, id = "")
+
+
+        bs_fun(df0::DataFrame) = glm_clust(eval(Meta.parse("@formula($(string(arg))" *
                                           " ~ close + logc + close_logc)")),
-				      clean(df, [arg], F64); clust = :hhea)[2]
+				      clean(df0, [arg], F64); clust = :hhea)[2]
+        r = bs_fun(df)
+
+        lb, ub = bootstrap(df, bs_fun; N_bs=N_bs, α=0.05, clust = clust, id = id)
     end
-    r_9a = [BS_reg(o) for o in outcomes]
-
-
-    # r_9a = Vector{FixedEffectModel}(undef, 6)
-    # _, r_9a[1] = glm_clust(@formula(showup ~ close + logc + close_logc),
-    #                            clean(df, [:showup], F64); clust = :hhea)
-
-
-
-    # # Col. 2: Baseline estimate of show_hat
-    # r_9a[2] = BS_reg(:col2) #glm_clust(@formula(col2 ~ close + logc + close_logc),
-    # #                           clean(df, [:col2], F64); clust = :hhea)
+    r_9a = [panel_A_output(o) for o in outcomes]
     @show r_9a[2]
-    # # Col. 3: Half Standard deviation of epsilon
-    # _, r_9a[3] = glm_clust(@formula(col3 ~ close + logc + close_logc),
-    #                           clean(df, [:col3], F64); clust = :hhea)
-    # # Col. 4: No epsilon variance
-    # _, r_9a[4] = glm_clust(@formula(col4 ~ close + logc + close_logc),
-    #                           clean(df, [:col4], F64); clust = :hhea)
-    # # Col. 5: No differential travel cost
-    # _, r_9a[5] = glm_clust(@formula(col5 ~ close + logc + close_logc),
-    #                           clean(df, [:col5], F64); clust = :hhea)
-    # # Col. 6: Constant mu AND lambda
-    # _, r_9a[6] = glm_clust(@formula(col6 ~ close + logc + close_logc),
-    #                           clean(df, [:col6], F64); clust = :hhea)
-
-    ### Panel A: Bootstrapping SEs
-    # bootstrap(df, f; N_bs::Int64 = 1000, α::T = 0.05,
-    #                    clust::Symbol = Symbol(), domain::Vector{T} = Vector(),
-    #                    id::String = "")
-
-
-    ### Panel A: p-values
 
     ### Panel B: Store output
     r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
