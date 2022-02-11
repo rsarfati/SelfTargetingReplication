@@ -416,12 +416,7 @@ end
 """
 Corresponds to counterfactuals_1.m
 """
-function counterfactuals_1(; N_grid = 100)
-    df = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
-    df = insertcols!(df, :logc => log.(df.consumption))
-    df = rename!(df, [:closesubtreatment => :close, :consumption => :c,
-                      :pmtscore => :pmt])
-    df = clean(df, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
+function counterfactuals_1(df::DataFrame; N_grid = 100, store_output = false)
     # Compute unobs. consumption (residual regressing log(obs cons) on PMT)
     df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
     # Corresponds to "load data" step
@@ -471,16 +466,17 @@ function counterfactuals_1(; N_grid = 100)
     df_6.FE  .= 0.
     df_6.FE2 .= 0.
     t_6 = [t[1:3]..., λ_con_bel_cml, λ_β_bel_cml]
+
     insertcols!(df_show_hat, :col6 => showuphat(df_6, t_6, η_sd, δ, μ_con_true_cml,
                                                 μ_β_true_cml, λ_con_true, λ_β_true;
                                                 N_grid = N_grid)[1])
     # Column 7: 3 extra km
-    df_7      = deepcopy(df)
+    df_7 = deepcopy(df)
     df_7.totcost_pc = (1 .- df.close) .* df.totcost_3k_pc + df.close .* df.totcost_pc
     insertcols!(df_show_hat, :col7 => showuphat(df_7, t, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 8: 6 extra km
-    df_8      = deepcopy(df)
+    df_8 = deepcopy(df)
     df_8.totcost_pc = (1 .- df.close) .* df.totcost_6k_pc + df.close .* df.totcost_pc
     insertcols!(df_show_hat, :col8 => showuphat(df_8, t, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
@@ -504,28 +500,40 @@ function counterfactuals_1(; N_grid = 100)
     t_11[3] = 1.0
     insertcols!(df_show_hat, :col12 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
                                                  λ_con_true, λ_β_true; N_grid = N_grid)[1])
-    CSV.write("output/MATLAB_table9_showup.csv", df_show_hat)
+    if store_output
+        CSV.write("output/MATLAB_table9_showup.csv", df_show_hat)
+    end
+    return df_show_hat
 end
 
 ###########################
 # Table 9: Modeled effects of time and distance costs on show-up rates (416)
 ###########################
-function table_9(; N_grid = 100, generate_counterfactuals = true)
-    # Load + clean data
+function table_9(; N_grid = 100, run_counterfactuals = true,
+                 panel_A = true, panel_B = true, panel_C = true)
+
+    # Load + clean full dataset, to be merged on later
     df = DataFrame(load("input/matched_baseline.dta"))
     df = insertcols!(df, :logc => log.(df.consumption))
     df = rename!(clean(df, [:hhid], Int64),
                  [:closesubtreatment => :close, :verypoor_povertyline1 => :below])
 
+    # Load + clean input dataset for simulation
+    df_sim = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
+    df_sim = insertcols!(df_sim, :logc => log.(df_sim.consumption))
+    df_sim = rename!(df_sim, [:closesubtreatment => :close, :consumption => :c,
+                              :pmtscore => :pmt])
+    df_sim = clean(df_sim, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
+
     # Run scenarios if one has not done so already, or wishes to do so again!
-    scenarios_file = "output/MATLAB_table9_showup.csv"
-    if generate_counterfactuals | !isfile(scenarios_file)
-        counterfactuals_1(; N_grid = N_grid)
+    scen_file = "output/MATLAB_table9_showup.csv"
+    if run_counterfactuals | !isfile(scen_file)
+        counterfactuals_1(df_sim; N_grid = N_grid, store_output = true)
     end
-    df_show = CSV.read(scenarios_file, DataFrame, header = true)
+    df_show = CSV.read(scen_file, DataFrame, header = true)
 
     # Merge counterfactual estimates with baseline data
-    df = innerjoin(df, df_show, on = :hhid)
+    #df = innerjoin(df, df_show, on = :hhid)
 
     # Clean merged data for missing values, define interactions for Panel B
     df = clean(df, [:logc, :close, :below], F64)
@@ -537,33 +545,47 @@ function table_9(; N_grid = 100, generate_counterfactuals = true)
     outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
     groups   = [:far_above, :close_above, :far_below, :close_below]
 
-    ### Panel A: Store output
-    function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 1000, id = "")
-        # Conform function to be bootstrapped so has correct input/output
-        fun(df0::DataFrame) = glm_clust(eval(Meta.parse(
-                       "@formula($(string(arg)) ~ close + logc + close_logc)")),
-				       clean(df0, [arg], F64); clust = :hhea)[2]
-        r    = fun(df)
-        r_se = bootstrap(df, d->coef(fun(d)); N_bs = N_bs, α = 0.05,
-                         multivar = true, clust = clust, id = id)[3]
-        return (coef(r), r_se)
+    if panel_A
+        ### Panel A: Store output
+        function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 1000)
+            # Brevity
+            str = string(arg)
+
+            # Conform function to be bootstrapped so has correct input/output
+            function fun(df0::DataFrame)
+                df_show = counterfactuals_1(deepcopy(df0))
+                df0     = innerjoin(df, df_show, on = :hhid)
+                return glm_clust(eval(Meta.parse(
+                           "@formula($(str) ~ close + logc + close_logc)")),
+    				       clean(df0, [arg], F64); clust = :hhea)[2]
+            end
+            # Estimate coefficients
+            r = fun(df_sim)
+            # Estimate SE with bootstrap
+            println("(Table 9) Bootstrapping $(str)...")
+            r_se = bootstrap(df_sim, d->coef(fun(d)); N_bs = N_bs, α = 0.05,
+                             multivar = true, clust = clust,
+                             id = "Panel A: $(str) ->")[3]
+            return (coef(r), r_se)
+        end
+        r_9a = [panel_A_output(o) for o in outcomes]
+        save("output/table9_panelA.jld2", r_9a)
     end
-    r_9a = [panel_A_output(o) for o in outcomes]
-    @show r_9a[2]
+    r_9a = load("output/table9_panelA.jld2", "r_9a")
 
     ### Panel B: Store output
     r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
     for (i, g) in enumerate(groups)
         for (j, out) in enumerate(outcomes)
-            df_temp    = clean(df, [g, out], F64)
-            r_9b[i][j] = sum(df_temp[:,out] .* df_temp[:,g]) / sum(df_temp[:,g])
+            df_tmp   = clean(df, [g, out], F64)
+            r_9b[i][j] = sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
         end
     end
 
     ### Panel C: Store output
     r_9c = Vector{Vector{F64}}(undef, 3)
 
-    return r_9b
+    return r_9a#, r_9b
 end
 
 ###########################

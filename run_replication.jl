@@ -4,7 +4,7 @@
 # *******************************
 
 # Base packages
-using CSV, DataFrames, Distributions, FileIO, ForwardDiff, LinearAlgebra
+using CSV, DataFrames, Distributions, FileIO, ForwardDiff, JLD2, LinearAlgebra
 using Optim, Printf, Plots, Statistics, StatFiles, StatsBase, StatsFuns
 # Indulgent packages
 using FixedEffectModels, GLM, RegressionTables, QuadGK, Vcov
