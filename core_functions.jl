@@ -77,7 +77,7 @@ function bootstrap(df::DataFrame, f::Function; N_bs::Int64=1000, α::F64=0.05,
 
     # Is evaluated function applied to domain? (e.g. Fan regression grid)
     N_x = length(domain)
-
+    N   = size(df, 1)
     # Store bootstrapped output; type of output depends on whether one is
     # estimating multiple coefficients
     T = (multivar ? Vector{F64} : F64)
@@ -86,7 +86,7 @@ function bootstrap(df::DataFrame, f::Function; N_bs::Int64=1000, α::F64=0.05,
     # Wave to the audience
     (id!="") ? println("$(id)Running $(N_bs) boostrap iterations...") : nothing
 
-    ## Run bootstrap iterations!
+    # Run bootstrap iterations!
     for i=1:N_bs
         VERBOSE ? println("* Iteration $i") : nothing
         # Sample at cluster-level, include all obs. w/in cluster in sample

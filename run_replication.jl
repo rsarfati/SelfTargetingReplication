@@ -52,7 +52,8 @@ labels = Dict("logconsumption" => "Log Consumption",
               "incl_err_hyp" => "\\substack{Incl. Error\\\\(Logit)}",
               "close" => "Close subtreatment",
               ["inc$i" => "Consumption quintile $i" for i=2:5]...,
-              ["closeinc$i" => "Close \$\\times\$ consumption quintile $i" for i=2:5]...,
+              ["closeinc$i" =>
+			        "Close \$\\times\$ consumption quintile $i" for i=2:5]...,
               "__LABEL_CUSTOM_STATISTIC_comments__" => "Stratum fixed effects",
               "__LABEL_CUSTOM_STATISTIC_means__" => "Mean of Dep. Variable")
 
@@ -77,11 +78,6 @@ table_5()
 table_6()
 table_7()
 
-### Run GMM estimation, generate tables
-table_8()
-# table_9()
-# table_10()
-
 ###### Figures #######
 figure_1()
 figure_2()
@@ -89,3 +85,8 @@ figure_3()
 figure_4()
 figure_5()
 figure_6()
+
+### Run GMM estimation, generate remaining tables
+table_8()
+# table_9()
+# table_10()

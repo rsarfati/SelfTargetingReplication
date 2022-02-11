@@ -176,8 +176,8 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
 
     # Run conditional logit regressions, clustering at stratum level
     μ_5b[3], r_5b[3] = glm_clust(@formula(get ~ self + logc + logc_ST + kecagroup),
-                    df_drop(:get, clean(df, [:get,:logc,:logc_ST,:kecagroup], F64));
-                    group = :kecagroup, clust = :kecagroup)
+                df_drop(:get, clean(df, [:get,:logc,:logc_ST,:kecagroup], F64));
+                group = :kecagroup, clust = :kecagroup)
 
     μ_5b[4], r_5b[4] = glm_clust(@formula(mistarget ~ self + kecagroup),
                     df_drop(:mistarget, clean(df, [:mistarget], F64));
@@ -194,12 +194,12 @@ function table_5(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  6), μ_5a))
     regtable(r_5a...; regressors = ["self", "logc", "logc & self"],
-             renderSettings = latexOutput("output/tables/Table5_NoStratumFEs.tex"),
+             renderSettings=latexOutput("output/tables/Table5_NoStratumFEs.tex"),
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 6), μ_5b))
      regtable(r_5b...; regressors = ["self", "logc", "logc_ST"],
-              renderSettings = latexOutput("output/tables/Table5_StratumFEs.tex"),
+              renderSettings=latexOutput("output/tables/Table5_StratumFEs.tex"),
               custom_statistics = mystats, table_kwargs...)
 
     return μ_5a, r_5a, μ_5b, r_5b
@@ -213,7 +213,7 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     # Load baseline data
     df = DataFrame(load("input/matched_baseline.dta"))
     rename!(df, [:logconsumption  => :logc, :closesubtreatment => :close,
-                 :selftargeting => :self])
+                 :selftargeting => :self, :verypoor_povertyline1 => :verypoor])
     N  = size(df, 1)
 
     insertcols!(df, :base_or_end  => 0.0,
@@ -225,15 +225,15 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                     :excl_err_hyp => Vector{Union{F64,Missing}}(missing, N),
                     :incl_err_hyp => Vector{Union{F64,Missing}}(missing, N))
 
-    df[(df.verypoor_povertyline1 .== 1) .& (df.benefit_hyp .== 1), :excl_err_hyp] .= 0.0
-    df[(df.verypoor_povertyline1 .== 1) .& (df.benefit_hyp .== 0), :excl_err_hyp] .= 1.0
+    df[(df.verypoor .== 1) .& (df.benefit_hyp .== 1), :excl_err_hyp] .= 0.0
+    df[(df.verypoor .== 1) .& (df.benefit_hyp .== 0), :excl_err_hyp] .= 1.0
 
-    df[(df.verypoor_povertyline1 .== 0) .& (df.benefit_hyp .== 0), :incl_err_hyp] .= 0.0
-    df[(df.verypoor_povertyline1 .== 0) .& (df.benefit_hyp .== 1), :incl_err_hyp] .= 1.0
+    df[(df.verypoor .== 0) .& (df.benefit_hyp .== 0), :incl_err_hyp] .= 0.0
+    df[(df.verypoor .== 0) .& (df.benefit_hyp .== 1), :incl_err_hyp] .= 1.0
 
-    insertcols!(df, :mistarget_hyp => [ismissing(df.incl_err_hyp[i]) ? df.excl_err_hyp[i] :
+    insertcols!(df, :mistarget_hyp => [ismissing(df.incl_err_hyp[i]) ?
+                                       df.excl_err_hyp[i] :
                                        df.incl_err_hyp[i] for i=1:N])
-
     # Store output
     μ_6a, r_6a = Vector{F64}(undef, 5), Vector{FixedEffectModel}(undef, 5)
     μ_6b, r_6b = Vector{F64}(undef, 5), Vector{FixedEffectModel}(undef, 5)
@@ -247,17 +247,17 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                             @formula(logc ~ self), cluster(:hhea))
 
     μ_6a[2], r_6a[2] = glm_clust(@formula(benefit_hyp ~ self + logc + logc_ST),
-                                 clean(df, [:logc, :benefit_hyp, :self, :logc_ST], F64);
-                                 clust = :kecagroup)
+                        clean(df, [:logc, :benefit_hyp, :self, :logc_ST], F64);
+                        clust = :kecagroup)
 
     μ_6a[3], r_6a[3] = glm_clust(@formula(mistarget_hyp ~ self),
-                                 clean(df, [:mistarget_hyp], F64); clust = :kecagroup)
+                        clean(df, [:mistarget_hyp], F64); clust = :kecagroup)
 
     μ_6a[4], r_6a[4] = glm_clust(@formula(excl_err_hyp ~ self),
-                                 clean(df, [:excl_err_hyp], F64); clust = :kecagroup)
+                        clean(df, [:excl_err_hyp], F64); clust = :kecagroup)
 
     μ_6a[5], r_6a[5] = glm_clust(@formula(incl_err_hyp ~ self),
-                                 clean(df, [:incl_err_hyp], F64); clust = :kecagroup)
+                        clean(df, [:incl_err_hyp], F64); clust = :kecagroup)
 
     ###########################
     # Analysis (w/ Stratum FEs)
@@ -268,15 +268,15 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                             @formula(logc ~ self + fe(kecagroup)), cluster(:hhea))
 
     # approx match; N agrees, SE sort of differ
-    μ_6b[2], r_6b[2] = glm_clust(@formula(benefit_hyp ~ self + logc + logc_ST + kecagroup),
-                                 df_drop(:benefit_hyp,
-                                         clean(df, [:benefit_hyp, :logc, :self,
-                                                    :logc_ST, :kecagroup], F64));
-                                 group = :kecagroup, clust = :kecagroup)
+    μ_6b[2], r_6b[2] = glm_clust(@formula(benefit_hyp ~ self + logc + logc_ST +
+                                          kecagroup),
+                        df_drop(:benefit_hyp, clean(df, [:benefit_hyp, :logc,
+                                :self, :logc_ST, :kecagroup], F64));
+                                group = :kecagroup, clust = :kecagroup)
 
     μ_6b[3], r_6b[3] = glm_clust(@formula(mistarget_hyp ~ self + kecagroup),
-                                 df_drop(:mistarget_hyp,
-                                         clean(df,[:mistarget_hyp,:self],F64));
+                         df_drop(:mistarget_hyp, clean(df, [:mistarget_hyp,
+                                 :self], F64));
                                  group = :kecagroup, clust = :kecagroup)
 
     # I get a WAY different value here. Does it have to do with the fact that I
@@ -295,12 +295,12 @@ function table_6(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
     # Print output
     mystats = NamedTuple{(:comments, :means)}((repeat(["No"],  5), μ_6a))
     regtable(r_6a...; regressors = ["self", "logc", "logc_ST"],
-             renderSettings = latexOutput("output/tables/Table6_NoStratumFEs.tex"),
+             renderSettings=latexOutput("output/tables/Table6_NoStratumFEs.tex"),
     		 custom_statistics = mystats, table_kwargs...)
 
      mystats = NamedTuple{(:comments, :means)}((repeat(["Yes"], 5), μ_6b))
      regtable(r_6b...; regressors = ["self", "logc", "logc_ST"],
-              renderSettings = latexOutput("output/tables/Table6_StratumFEs.tex"),
+              renderSettings=latexOutput("output/tables/Table6_StratumFEs.tex"),
               custom_statistics = mystats, table_kwargs...)
 
     return μ_6a, r_6a, μ_6b, r_6b
@@ -322,7 +322,7 @@ function table_7(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                     :inc1    => quint.(df.logc, 1),
                     :inc2    => quint.(df.logc, 2), :inc3 => quint.(df.logc, 3),
                     :inc4    => quint.(df.logc, 4), :inc5 => quint.(df.logc, 5))
-    insertcols!(df, :close_logc => df.logc .* df.close,
+    insertcols!(df, :close_logc => df.logc  .* df.close,
                     :closeinc1  => df.close .* df.inc1,
                     :closeinc2  => df.close .* df.inc2,
                     :closeinc3  => df.close .* df.inc3,
@@ -351,19 +351,17 @@ function table_7(; table_kwargs::Dict{Symbol,Any} = table_kwargs)
                                df_drop(:showup, df); group = :kecagroup,
                                clust = :kecagroup)
     # R5: Conditional Logit
-    μ_7[5], r_7[5] = glm_clust(@formula(showup ~ close + logc + close_logc + kecagroup),
-                               df_drop(:showup,
-                                       clean(df, [:logc, :close_logc], F64));
-                               group = :kecagroup, clust = :kecagroup)
+    μ_7[5], r_7[5] = glm_clust(@formula(showup ~ close + logc + close_logc +
+                                        kecagroup),
+                        df_drop(:showup, clean(df, [:logc, :close_logc], F64));
+                        group = :kecagroup, clust = :kecagroup)
     # R6: Conditional Logit
     μ_7[6], r_7[6] = glm_clust(@formula(showup ~ close + inc2 + inc3 + inc4 +
                                         inc5 + closeinc2 + closeinc3 +
                                         closeinc4 + closeinc5 + kecagroup),
-                               df_drop(:showup,
-                                       clean(df, [:inc2, :inc3, :inc4, :inc5,
-                                                  :closeinc2, :closeinc3,
-                                                  :closeinc4, :closeinc5], F64));
-                               group = :kecagroup, clust = :kecagroup)
+                        df_drop(:showup, clean(df, [:inc2, :inc3, :inc4, :inc5,
+                        :closeinc2, :closeinc3, :closeinc4, :closeinc5], F64));
+                        group = :kecagroup, clust = :kecagroup)
     # Print output
     mystats = NamedTuple{(:comments, :means)}((["No","No","No","Yes","Yes","Yes"], μ_7))
     regtable(r_7...; renderSettings = latexOutput("output/tables/Table7.tex"),
@@ -392,17 +390,17 @@ function table_8(; run_estimation = true, run_bootstrap = true,
         run_estimation = !have_est
         run_bootstrap  = !have_bs
         println("(Table 8) NOTE: You have set the keyword overwrite_output = " *
-                "false.\n\nEven if run_{estimation, bootstrap} = true, these " *
+                "false.\n\nEven if `run_{estimation, bootstrap} = true`, these " *
                 "flags will be ignored if the corresponding output file already " *
-                "exists in your output/ directory. (Overwriting is set to false " *
+                "exists in your `output/ directory`. (Overwriting is set to false " *
                 "by default so you don't do something you regret.) If you wish "  *
                 "to proceed, re-run this command with overwrite_output = true, "  *
                 "or rename/move the existing file(s) for safe-keeping. \n")
     end
-    println("✨ For reference, you currently " *
-                    (have_est ? "✅ DO " : " ⛔ DO NOT ") *
+    println("✨  For reference, you currently " *
+                    (have_est ? "✅  DO " : " ⛔  DO NOT ") *
             "have an output estimation file, and " *
-                    (have_bs  ? "✅ DO " : " ⛔ DO NOT ") *
+                    (have_bs  ? "✅  DO " : " ⛔  DO NOT ") *
             "have an output bootstrap file. ✨\n")
     if !(run_estimation | have_est) | !(run_bootstrap | have_bs)
         println("Since one or more of the above files does not exist, and you " *
@@ -468,38 +466,38 @@ function counterfactuals_1(df::DataFrame; N_grid = 100, store_output = false)
     t_6 = [t[1:3]..., λ_con_bel_cml, λ_β_bel_cml]
 
     insertcols!(df, :col6 => showuphat(df_6, t_6, η_sd, δ, μ_con_true_cml,
-                                                μ_β_true_cml, λ_con_true, λ_β_true;
-                                                N_grid = N_grid)[1])
+                                       μ_β_true_cml, λ_con_true, λ_β_true;
+                                       N_grid = N_grid)[1])
     # Column 7: 3 extra km
     df_7 = deepcopy(df)
     df_7.totcost_pc = (1 .- df.close) .* df.totcost_3k_pc + df.close .* df.totcost_pc
     insertcols!(df, :col7 => showuphat(df_7, t, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                       λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 8: 6 extra km
     df_8 = deepcopy(df)
     df_8.totcost_pc = (1 .- df.close) .* df.totcost_6k_pc + df.close .* df.totcost_pc
     insertcols!(df, :col8 => showuphat(df_8, t, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                       λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 9: 3x waiting time
     df_9 = deepcopy(df)
     df_9.totcost_pc = df.totcost_pc + (1 .- df.close) .* (2 .* df.ave_waiting .*
                                                 df.wagerate) ./ (df.hhsize .* 60)
     insertcols!(df, :col9 => showuphat(df_9, t, η_sd, δ, μ_con_true, μ_β_true,
-                                                λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                       λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 10: 6x waiting time
     df_10 = deepcopy(df)
     df_10.totcost_pc = df.totcost_pc + (1 .- df.close) .* (5 .* df.ave_waiting .*
                                                 df.wagerate) ./ (df.hhsize .* 60)
     insertcols!(df, :col10 => showuphat(df_10, t, η_sd, δ, μ_con_true, μ_β_true,
-                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                        λ_con_true, λ_β_true; N_grid = N_grid)[1])
 
     # Column 11-12 alpha=0 (all-unsophisticated) and alpha=1 (all sophisticated)
     t_11 = [t[1], t[2], 0.0, t[4], t[5]]
     insertcols!(df, :col11 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
-                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                        λ_con_true, λ_β_true; N_grid = N_grid)[1])
     t_11[3] = 1.0
     insertcols!(df, :col12 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
-                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
+                                        λ_con_true, λ_β_true; N_grid = N_grid)[1])
     if store_output
         CSV.write("output/MATLAB_table9_showup.csv", df)
     end
@@ -541,7 +539,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
     # Run scenarios if one has not done so already, or wishes to do so again!
     scen_file = "output/MATLAB_table9_showup.csv"
     df_show = if run_counterfactuals | !isfile(scen_file)
-        counterfactuals_1(deepcopy(df_sim); N_grid = N_grid, store_output = true)
+        counterfactuals_1(deepcopy(df_sim); N_grid = N_grid, store_output=true)
     else
         CSV.read(scen_file, DataFrame, header = true)
     end
@@ -549,7 +547,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
 
     if panel_A
         ### Panel A: Store output
-        function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 1000)
+        function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 100)
             # Brevity
             str = string(arg)
             # Conform function to be bootstrapped so has correct input/output
@@ -569,10 +567,15 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
                              id = "Panel A: $(str) -> ", VERBOSE = true)[3]
             return (coef(r), r_se)
         end
-        r_9a = [panel_A_output(o) for o in outcomes]
-        @save "output/table9_panelA.jld2" r_9a
+        for o in outcomes
+            BS_o = panel_A_output(o)
+            @save "output/table9_panel_A_$(string(o)).jld2" BS_o
+        end
+        # r_9a = [panel_A_output(o) for o in outcomes]
+        # @save "output/table9_panel_A.jld2" r_9a
     end
-    r_9a = load("output/table9_panelA.jld2", "r_9a")
+
+    r_9a = load("output/table9_panel_A.jld2", "r_9a")
 
     ### Panel B: Store output
     r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
