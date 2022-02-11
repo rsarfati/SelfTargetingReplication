@@ -435,26 +435,26 @@ function counterfactuals_1(df::DataFrame; N_grid = 100, store_output = false)
     δ = δ_y * (1 + δ_y + δ_y^2 + δ_y^3 + δ_y^4 + δ_y^5)
     t = [-79681, 59715, 0.5049, 8.0448, -0.71673]
 
-    df_show_hat = DataFrame([:hhid => df.hhid, :c_q => df.c_q])
+    #df_show_hat = DataFrame([:hhid => df.hhid, :c_q => df.c_q])
 
     # Column 2: Baseline estimate of show_hat
-    insertcols!(df_show_hat, :col2 =>
+    insertcols!(df, :col2 =>
         showuphat(df, t, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
                   N_grid = N_grid)[1])
     # Column 3: Half Standard deviation of epsilon
     t_3 = [t[1], t[2]/2, t[3:5]...]
-    insertcols!(df_show_hat, :col3 =>
+    insertcols!(df, :col3 =>
         showuphat(df, t_3, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
                   N_grid = N_grid)[1])
     # Column 4: No epsilon variance
     t_4 = [t[1], t[2]/1e10, t[3:5]...]
-    insertcols!(df_show_hat, :col4 =>
+    insertcols!(df, :col4 =>
         showuphat(df, t_4, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
                   N_grid = N_grid)[1])
     # Column 5: No differential travel cost
     df_5 = deepcopy(df)
     df_5.totcost_pc = df.totcost_smth_pc
-    insertcols!(df_show_hat, :col5 =>
+    insertcols!(df, :col5 =>
         showuphat(df_5, t, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
                   N_grid = N_grid)[1])
 
@@ -467,43 +467,43 @@ function counterfactuals_1(df::DataFrame; N_grid = 100, store_output = false)
     df_6.FE2 .= 0.
     t_6 = [t[1:3]..., λ_con_bel_cml, λ_β_bel_cml]
 
-    insertcols!(df_show_hat, :col6 => showuphat(df_6, t_6, η_sd, δ, μ_con_true_cml,
+    insertcols!(df, :col6 => showuphat(df_6, t_6, η_sd, δ, μ_con_true_cml,
                                                 μ_β_true_cml, λ_con_true, λ_β_true;
                                                 N_grid = N_grid)[1])
     # Column 7: 3 extra km
     df_7 = deepcopy(df)
     df_7.totcost_pc = (1 .- df.close) .* df.totcost_3k_pc + df.close .* df.totcost_pc
-    insertcols!(df_show_hat, :col7 => showuphat(df_7, t, η_sd, δ, μ_con_true, μ_β_true,
+    insertcols!(df, :col7 => showuphat(df_7, t, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 8: 6 extra km
     df_8 = deepcopy(df)
     df_8.totcost_pc = (1 .- df.close) .* df.totcost_6k_pc + df.close .* df.totcost_pc
-    insertcols!(df_show_hat, :col8 => showuphat(df_8, t, η_sd, δ, μ_con_true, μ_β_true,
+    insertcols!(df, :col8 => showuphat(df_8, t, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 9: 3x waiting time
     df_9 = deepcopy(df)
     df_9.totcost_pc = df.totcost_pc + (1 .- df.close) .* (2 .* df.ave_waiting .*
                                                 df.wagerate) ./ (df.hhsize .* 60)
-    insertcols!(df_show_hat, :col9 => showuphat(df_9, t, η_sd, δ, μ_con_true, μ_β_true,
+    insertcols!(df, :col9 => showuphat(df_9, t, η_sd, δ, μ_con_true, μ_β_true,
                                                 λ_con_true, λ_β_true; N_grid = N_grid)[1])
     # Column 10: 6x waiting time
     df_10 = deepcopy(df)
     df_10.totcost_pc = df.totcost_pc + (1 .- df.close) .* (5 .* df.ave_waiting .*
                                                 df.wagerate) ./ (df.hhsize .* 60)
-    insertcols!(df_show_hat, :col10 => showuphat(df_10, t, η_sd, δ, μ_con_true, μ_β_true,
+    insertcols!(df, :col10 => showuphat(df_10, t, η_sd, δ, μ_con_true, μ_β_true,
                                                  λ_con_true, λ_β_true; N_grid = N_grid)[1])
 
     # Column 11-12 alpha=0 (all-unsophisticated) and alpha=1 (all sophisticated)
     t_11 = [t[1], t[2], 0.0, t[4], t[5]]
-    insertcols!(df_show_hat, :col11 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
+    insertcols!(df, :col11 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
                                                  λ_con_true, λ_β_true; N_grid = N_grid)[1])
     t_11[3] = 1.0
-    insertcols!(df_show_hat, :col12 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
+    insertcols!(df, :col12 => showuphat(df, t_11, η_sd, δ, μ_con_true, μ_β_true,
                                                  λ_con_true, λ_β_true; N_grid = N_grid)[1])
     if store_output
-        CSV.write("output/MATLAB_table9_showup.csv", df_show_hat)
+        CSV.write("output/MATLAB_table9_showup.csv", df)
     end
-    return df_show_hat
+    return df
 end
 
 ###########################
@@ -515,8 +515,21 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
     # Load + clean full dataset, to be merged on later
     df = DataFrame(load("input/matched_baseline.dta"))
     df = insertcols!(df, :logc => log.(df.consumption))
-    df = rename!(clean(df, [:hhid], Int64),
-                 [:closesubtreatment => :close, :verypoor_povertyline1 => :below])
+    df = rename!(df, [:closesubtreatment => :close1,
+                      :verypoor_povertyline1 => :below])
+    df = clean(df, [:hhid], Int64)
+    df = clean(df, [:logc, :close1, :below], F64)
+
+    # Define interactions for Panel B
+    insertcols!(df, :close_logc  =>        df.logc    .*        df.close1,
+                    :close_below =>        df.close1  .*        df.below,
+                    :close_above =>        df.close1  .* iszero(df.below),
+                    :far_below   => iszero(df.close1) .*        df.below,
+                    :far_above   => iszero(df.close1) .* iszero(df.below))
+
+    # Define outcomes and population cleaves
+    outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
+    groups   = [:far_above, :close_above, :far_below, :close_below]
 
     # Load + clean input dataset for simulation
     df_sim = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
@@ -527,37 +540,25 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
 
     # Run scenarios if one has not done so already, or wishes to do so again!
     scen_file = "output/MATLAB_table9_showup.csv"
-    if run_counterfactuals | !isfile(scen_file)
-        counterfactuals_1(df_sim; N_grid = N_grid, store_output = true)
+    df_show = if run_counterfactuals | !isfile(scen_file)
+        counterfactuals_1(deepcopy(df_sim); N_grid = N_grid, store_output = true)
+    else
+        CSV.read(scen_file, DataFrame, header = true)
     end
-    df_show = CSV.read(scen_file, DataFrame, header = true)
-
-    # Merge counterfactual estimates with baseline data
-    #df = innerjoin(df, df_show, on = :hhid)
-
-    # Clean merged data for missing values, define interactions for Panel B
-    df = clean(df, [:logc, :close, :below], F64)
-    insertcols!(df, :close_logc  =>        df.logc   .*        df.close,
-                    :close_below =>        df.close  .*        df.below,
-                    :close_above =>        df.close  .* iszero(df.below),
-                    :far_below   => iszero(df.close) .*        df.below,
-                    :far_above   => iszero(df.close) .* iszero(df.below))
-    outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
-    groups   = [:far_above, :close_above, :far_below, :close_below]
+    to_keep = Symbol.(filter(x->x ∉ names(df), names(df_show)))
 
     if panel_A
         ### Panel A: Store output
         function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 1000)
             # Brevity
             str = string(arg)
-
             # Conform function to be bootstrapped so has correct input/output
             function fun(df0::DataFrame)
-                df_show = counterfactuals_1(deepcopy(df0))
-                df0     = innerjoin(df, df_show, on = :hhid)
+                df0  = counterfactuals_1(deepcopy(df0))
+                df_A = innerjoin(df, df0[:, [to_keep..., :hhid]], on = :hhid)
                 return glm_clust(eval(Meta.parse(
                            "@formula($(str) ~ close + logc + close_logc)")),
-    				       clean(df0, [arg], F64); clust = :hhea)[2]
+    				       clean(df_A, [arg], F64); clust = :hhea)[2]
             end
             # Estimate coefficients
             r = fun(df_sim)
@@ -565,11 +566,11 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
             println("(Table 9) Bootstrapping $(str)...")
             r_se = bootstrap(df_sim, d->coef(fun(d)); N_bs = N_bs, α = 0.05,
                              multivar = true, clust = clust,
-                             id = "Panel A: $(str) ->")[3]
+                             id = "Panel A: $(str) -> ", VERBOSE = true)[3]
             return (coef(r), r_se)
         end
         r_9a = [panel_A_output(o) for o in outcomes]
-        save("output/table9_panelA.jld2", r_9a)
+        @save "output/table9_panelA.jld2" r_9a
     end
     r_9a = load("output/table9_panelA.jld2", "r_9a")
 
@@ -577,7 +578,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
     r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
     for (i, g) in enumerate(groups)
         for (j, out) in enumerate(outcomes)
-            df_tmp   = clean(df, [g, out], F64)
+            df_tmp     = clean(df, [g, out], F64)
             r_9b[i][j] = sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
         end
     end

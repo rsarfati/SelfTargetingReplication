@@ -68,7 +68,8 @@ and standard errors (out: [3]).
 """
 function bootstrap(df::DataFrame, f::Function; N_bs::Int64=1000, α::F64=0.05,
                    multivar::Bool = false, clust::Symbol = Symbol(),
-                   domain::Vector{F64} = Vector{F64}(), id::String = "")
+                   domain::Vector{F64} = Vector{F64}(), id::String = "",
+                   VERBOSE = false)
 
     # If pass symbol to cluster on, extract values on which to cluster
     clustering = (clust != Symbol())
@@ -87,6 +88,7 @@ function bootstrap(df::DataFrame, f::Function; N_bs::Int64=1000, α::F64=0.05,
 
     ## Run bootstrap iterations!
     for i=1:N_bs
+        VERBOSE ? println("* Iteration $i") : nothing
         # Sample at cluster-level, include all obs. w/in cluster in sample
         idx_bs = if clustering
             bs_clust = sample(clust_set, length(clust_set); replace = true)
