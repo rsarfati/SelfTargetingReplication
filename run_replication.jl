@@ -55,7 +55,11 @@ labels = Dict("logconsumption" => "Log Consumption",
               ["closeinc$i" =>
 			        "Close \$\\times\$ consumption quintile $i" for i=2:5]...,
               "__LABEL_CUSTOM_STATISTIC_comments__" => "Stratum fixed effects",
-              "__LABEL_CUSTOM_STATISTIC_means__" => "Mean of Dep. Variable")
+              "__LABEL_CUSTOM_STATISTIC_means__" => "Mean of Dep. Variable",
+              "close_below" =>  "Below poverty line, close",
+              "close_above" =>  "Above poverty line, close",
+              "far_below"   => "Below poverty line, far",
+              "far_above"   => "Above poverty line, far")
 
 table_kwargs = Dict(:labels => labels,
                     :print_estimator_section => false,

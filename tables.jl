@@ -507,8 +507,9 @@ end
 ###########################
 # Table 9: Modeled effects of time and distance costs on show-up rates (416)
 ###########################
-function table_9(; N_grid = 100, run_counterfactuals = true,
-                 panel_A = true, panel_B = true, panel_C = true)
+function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true,
+                 N_bs = 1000)
+                 #panel_A = true, panel_B = true, panel_C = true)
 
     # Load + clean full dataset, to be merged on later
     df = DataFrame(load("input/matched_baseline.dta"))
@@ -519,11 +520,11 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
     df = clean(df, [:logc, :close1, :below], F64)
 
     # Define interactions for Panel B
-    insertcols!(df, :close_logc  =>        df.logc    .*        df.close1,
-                    :close_below =>        df.close1  .*        df.below,
-                    :close_above =>        df.close1  .* iszero(df.below),
-                    :far_below   => iszero(df.close1) .*        df.below,
-                    :far_above   => iszero(df.close1) .* iszero(df.below))
+    insertcols!(df, :close_logc  =>  df.logc            .*  df.close1,
+                    :close_below =>  df.close1          .*  df.below,
+                    :close_above =>  df.close1          .* (df.below .== 0.0),
+                    :far_below   => (df.close1 .== 0.0) .*  df.below,
+                    :far_above   => (df.close1 .== 0.0) .* (df.below .== 0.0))
 
     # Define outcomes and population cleaves
     outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
@@ -545,51 +546,111 @@ function table_9(; N_grid = 100, run_counterfactuals = true,
     end
     to_keep = Symbol.(filter(x->x ∉ names(df), names(df_show)))
 
-    if panel_A
-        ### Panel A: Store output
-        function panel_A_output(arg::Symbol; clust = Symbol(), N_bs = 100)
-            # Brevity
-            str = string(arg)
-            # Conform function to be bootstrapped so has correct input/output
-            function fun(df0::DataFrame)
-                df0  = counterfactuals_1(deepcopy(df0))
-                df_A = innerjoin(df, df0[:, [to_keep..., :hhid]], on = :hhid)
-                return glm_clust(eval(Meta.parse(
-                           "@formula($(str) ~ close + logc + close_logc)")),
-    				       clean(df_A, [arg], F64); clust = :hhea)[2]
+    ### Panel A:
+    function panel_A(df0::DataFrame, arg::Symbol)
+        return coef(glm_clust(eval(Meta.parse(
+                   "@formula($(string(arg)) ~ close + logc + close_logc)")),
+                   clean(df0, [arg], F64); clust = :hhea)[2])
+    end
+    ### Panel B:
+    function panel_B(df0::DataFrame)
+        r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
+        for (i, g) in enumerate(groups)
+            for (j, out) in enumerate(outcomes)
+                df_tmp     = clean(df0, [g, out], F64)
+                r_9b[i][j] = 100 * sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
             end
-            # Estimate coefficients
-            r = fun(df_sim)
-            # Estimate SE with bootstrap
-            println("(Table 9) Bootstrapping $(str)...")
-            r_se = bootstrap(df_sim, d->coef(fun(d)); N_bs = N_bs, α = 0.05,
-                             multivar = true, clust = clust,
-                             id = "Panel A: $(str) -> ", VERBOSE = true)[3]
-            return (coef(r), r_se)
         end
-        for o in outcomes
-            BS_o = panel_A_output(o)
-            @save "output/table9_panel_A_$(string(o)).jld2" BS_o
-        end
-        # r_9a = [panel_A_output(o) for o in outcomes]
-        # @save "output/table9_panel_A.jld2" r_9a
+        return r_9b
+    end
+    ### Panel C:
+    function panel_C(r_B::Vector)
+        poor_rich_far   = r_B[3] ./ r_B[1]
+        poor_rich_close = r_B[4] ./ r_B[2]
+        return [poor_rich_far, poor_rich_close, poor_rich_far .- poor_rich_close]
     end
 
-    r_9a = load("output/table9_panel_A.jld2", "r_9a")
+    df_m = innerjoin(df, df_show[:, [to_keep..., :hhid]], on = :hhid)
+    r_9a = [panel_A(df_m, o) for o in outcomes]
+    r_9b = panel_B(df_m)
+    r_9c = panel_C(r_9b)
 
-    ### Panel B: Store output
-    r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
+    @save "output/table9_panel_A.jld2" r_9a
+    @save "output/table9_panel_B.jld2" r_9b
+    @save "output/table9_panel_C.jld2" r_9c
+
+    ### Bootstrap Panel A and C's standard errors
+    if bootstrap_se
+        # Draw random clusters, then include all obs. w/in cluster into index set
+        c_set        = unique(df_sim[:,:hhea])
+        bs_clust_idx = [sample(c_set, length(c_set); replace=true) for i=1:N_bs]
+        bs_idx       = [vcat([findall(isequal(c), df_sim[:,:hhea])
+                                for c in bs_clust]...) for bs_clust in bs_clust_idx]
+        bs_A_out  = Dict{Symbol,Matrix{F64}}([o =>
+                    Matrix{F64}(undef, N_bs, 3) for o in outcomes])
+        bs_C_out  = deepcopy(bs_A_out)
+        obs_count = 0
+
+        # Run bootstrap!
+        for i=1:N_bs
+            println("(Table 9) Bootstrap iter. $i")
+            # Grab subsample, note # of observations in subsample
+            idx        = bs_idx[i]
+            obs_count += length(idx)
+            # Run counterfactual estimates on subsample
+            df_i   = counterfactuals_1(deepcopy(df_sim)[idx,:])
+            df_tmp = innerjoin(df, df_i[:, [to_keep..., :hhid]], on = :hhid)
+            rc_i   = panel_C(panel_B(df_tmp))
+            for (j,o) in enumerate(outcomes)
+                bs_A_out[o][i,:] = panel_A(df_tmp, o)[2:end] # Drop constant
+                bs_C_out[o][i,:] = [rc[j] for rc in rc_i]
+            end
+        end
+        # Compute standard errors + save output
+        bs_A_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_A_out[o], dims=1)) for o in outcomes])
+        bs_C_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_C_out[o], dims=1)) for o in outcomes])
+        @save "output/table9_panel_A_SE.jld2" bs_A_se
+        @save "output/table9_panel_C_SE.jld2" bs_C_se
+        @save "output/table9_obs_count.jld2" obs_count
+    end
+    bs_A_se   = load("output/table9_panel_A_SE.jld2")["bs_A_se"]
+    bs_C_se   = load("output/table9_panel_C_SE.jld2")["bs_C_se"]
+    obs_count = load("output/table9_obs_count.jld2")["obs_count"]
+    r_9a = [panel_A(df_m,o) for o in outcomes]
+    r_9b = panel_B(df_m)
+    r_9c = panel_C(r_9b)
+    # Directly write LaTeX table
+    io = open("output/tables/Table9.tex", "w")
+    write(io, "\\begin{tabular}{lcccccc}\\toprule" *
+              " &\\multicolumn{1}{p{0.18\\linewidth}}{\\centering Show-up Rate" *
+              "\\\\(Experimental)}&\\multicolumn{5}{c}{\\centering Predicted Show-up Probability" *
+              " \\\\ (See Models Above)} \\cmidrule(lr){3-7}" *
+              "& (1) & (2) & (3) & (4) & (5) & (6) \\\\ " *
+              "\\midrule\n & \\multicolumn{6}{c}{\\centering A. Logistic " *
+              "Regressions}\\\\\\cmidrule(lr){2-7} \n")
+    # Print Panel A
+    for (i, sym) in enumerate([labels["close"], labels["logc"], labels["close_logc"]])
+        @printf(io, "%s & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+                    vcat(sym, [r_9a[j][i+1] for j=1:length(outcomes)])...)
+        @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
+                    [bs_C_se[o][i] for o in outcomes]...)
+    end
+    write(io, "Observations & $(size(df_m,1)) " * repeat("& $obs_count", 5) * "\\\\")
+    # Compute p-values here
+
+    # Panel B
+    write(io, "\\midrule\n & \\multicolumn{6}{c}{\\centering B. Show " *
+    "Up Rates}\\\\\\cmidrule(lr){2-7} \n")
     for (i, g) in enumerate(groups)
-        for (j, out) in enumerate(outcomes)
-            df_tmp     = clean(df, [g, out], F64)
-            r_9b[i][j] = sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
-        end
+        @printf(io, "%s & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f \\\\",
+                    vcat(labels[str(g)], r_9b[i])...)
     end
+    #@printf(io, " %d &  %d & %0.2f & % 0.2f & %0.2f \\\\", t_est[:,1]...)
+    #@printf(io, "(%d) & (%d) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", bs_SE...)
+    write(io, "\\bottomrule\\end{tabular}")
+    close(io)
 
-    ### Panel C: Store output
-    r_9c = Vector{Vector{F64}}(undef, 3)
-
-    return r_9a#, r_9b
+    return bs_A_se
 end
 
 ###########################
