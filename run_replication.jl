@@ -14,7 +14,7 @@ import ForwardDiff.jacobian, Optim.minimizer
 import Vcov.cluster
 
 # TODO: Specify path to working directory!
-PATH = "/Users/henrygenighx/Desktop/14.771 - Dev/replication/"
+PATH = ""
 
 # Build output folders if don't already exist
 run(`cd $PATH`)

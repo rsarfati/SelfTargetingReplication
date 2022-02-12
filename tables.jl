@@ -507,8 +507,8 @@ end
 ###########################
 # Table 9: Modeled effects of time and distance costs on show-up rates (416)
 ###########################
-function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = false,
-                 N_bs = 1000)
+function table_9(; N_grid = 100, run_counterfactuals = true,
+                 bootstrap_se = false, N_bs = 1000)
 
     # Load + clean full dataset, to be merged on later
     df = DataFrame(load("input/matched_baseline.dta"))
@@ -557,7 +557,8 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = fals
         for (i, g) in enumerate(groups)
             for (j, out) in enumerate(outcomes)
                 df_tmp     = clean(df0, [g, out], F64)
-                r_9b[i][j] = 100 * sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
+                r_9b[i][j] = 100 * sum(df_tmp[:,out] .* df_tmp[:,g]) /
+                                                    sum(df_tmp[:,g])
             end
         end
         return r_9b
@@ -566,7 +567,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = fals
     function panel_C(r_B::Vector)
         poor_rich_far   = r_B[3] ./ r_B[1]
         poor_rich_close = r_B[4] ./ r_B[2]
-        return [poor_rich_far, poor_rich_close, poor_rich_far .- poor_rich_close]
+        return [poor_rich_far,poor_rich_close,poor_rich_far .- poor_rich_close]
     end
 
     df_m = innerjoin(df, df_show[:, [to_keep..., :hhid]], on = :hhid)
@@ -580,11 +581,11 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = fals
 
     ### Bootstrap Panel A and C's standard errors
     if bootstrap_se
-        # Draw random clusters, then include all obs. w/in cluster into index set
+        # Draw random clusters, then include all obs. w/in cluster into ind set
         c_set        = unique(df_sim[:,:hhea])
         bs_clust_idx = [sample(c_set, length(c_set); replace=true) for i=1:N_bs]
         bs_idx       = [vcat([findall(isequal(c), df_sim[:,:hhea])
-                                for c in bs_clust]...) for bs_clust in bs_clust_idx]
+                        for c in bs_clust]...) for bs_clust in bs_clust_idx]
         bs_A_out  = Dict{Symbol,Matrix{F64}}([o =>
                     Matrix{F64}(undef, N_bs, 3) for o in outcomes])
         bs_C_out  = deepcopy(bs_A_out)
@@ -606,8 +607,10 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = fals
             end
         end
         # Compute standard errors + save output
-        bs_A_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_A_out[o], dims=1)) for o in outcomes])
-        bs_C_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_C_out[o], dims=1)) for o in outcomes])
+        bs_A_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_A_out[o], dims=1))
+                                            for o in outcomes])
+        bs_C_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_C_out[o], dims=1))
+                                            for o in outcomes])
         @save "output/table9_panel_A_SE.jld2" bs_A_se
         @save "output/table9_panel_C_SE.jld2" bs_C_se
         @save "output/table9_obs_count.jld2" obs_count
@@ -630,11 +633,11 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = fals
     for (i, sym) in enumerate([labels["close"], labels["logc"], labels["close_logc"]])
         @printf(io, "%s & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
                     vcat(sym, [r_9a[j][i+1] for j=1:length(outcomes)])...)
-        @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
+        @printf(io, " &(%0.3f)&(%0.3f)&(%0.3f)&(%0.3f) & (%0.3f) & (%0.3f)\\\\",
                     [bs_A_se[o][i] for o in outcomes]...)
     end
-    write(io, "Observations & $(size(df_m,1)) " * repeat("& $obs_count", 5) * "\\\\")
-    write(io, "\\textit{p-value} & &")
+    write(io, "Observations & $(size(df_m,1)) " * repeat("& $obs_count", 5))
+    write(io, "\\\\ \\textit{p-value} & &")
 
     # Compute p-values here
     n1 = size(df_m, 1)
@@ -668,7 +671,8 @@ end
 """
 Extension!
 """
-function extension_counterfactuals(df::DataFrame; N_grid = 100, store_output = false)
+function extension_counterfactuals(df::DataFrame; N_grid = 100,
+                                   store_output = false)
     # Compute unobs. consumption (residual regressing log(obs cons) on PMT)
     df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
     # Corresponds to "load data" step
@@ -734,7 +738,7 @@ end
 ###########################
 # Extension
 ###########################
-function table_extension(; N_grid = 100, run_counterfactuals = true, 
+function table_extension(; N_grid = 100, run_counterfactuals = true,
                          bootstrap_se = true, N_bs = 500)
 
     # Load + clean full dataset, to be merged on later
@@ -785,7 +789,8 @@ function table_extension(; N_grid = 100, run_counterfactuals = true,
         for (i, g) in enumerate(groups)
             for (j, out) in enumerate(outcomes)
                 df_tmp     = clean(df0, [g, out], F64)
-                r_9b[i][j] = 100 * sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
+                r_9b[i][j] = 100 * sum(df_tmp[:,out] .* df_tmp[:,g]) /
+                                                    sum(df_tmp[:,g])
             end
         end
         return r_9b
@@ -794,7 +799,7 @@ function table_extension(; N_grid = 100, run_counterfactuals = true,
     function panel_C(r_B::Vector)
         poor_rich_far   = r_B[3] ./ r_B[1]
         poor_rich_close = r_B[4] ./ r_B[2]
-        return [poor_rich_far, poor_rich_close, poor_rich_far .- poor_rich_close]
+        return [poor_rich_far,poor_rich_close,poor_rich_far-poor_rich_close]
     end
 
     df_m = innerjoin(df, df_show[:, [to_keep..., :hhid]], on = :hhid)
@@ -812,7 +817,7 @@ function table_extension(; N_grid = 100, run_counterfactuals = true,
         c_set        = unique(df_sim[:,:hhea])
         bs_clust_idx = [sample(c_set, length(c_set); replace=true) for i=1:N_bs]
         bs_idx       = [vcat([findall(isequal(c), df_sim[:,:hhea])
-                                for c in bs_clust]...) for bs_clust in bs_clust_idx]
+                        for c in bs_clust]...) for bs_clust in bs_clust_idx]
         bs_A_out  = Dict{Symbol,Matrix{F64}}([o =>
                     Matrix{F64}(undef, N_bs, 3) for o in outcomes])
         bs_C_out  = deepcopy(bs_A_out)
@@ -834,8 +839,10 @@ function table_extension(; N_grid = 100, run_counterfactuals = true,
             end
         end
         # Compute standard errors + save output
-        bs_A_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_A_out[o], dims=1)) for o in outcomes])
-        bs_C_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_C_out[o], dims=1)) for o in outcomes])
+        bs_A_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_A_out[o], dims=1))
+                                            for o in outcomes])
+        bs_C_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_C_out[o], dims=1))
+                                            for o in outcomes])
         @save "output/ext_panel_A_SE.jld2" bs_A_se
         @save "output/ext_panel_C_SE.jld2" bs_C_se
         @save "output/ext_obs_count.jld2" obs_count
