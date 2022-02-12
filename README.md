@@ -1,6 +1,6 @@
 # Replication of "Self Targeting: Evidence from a Field Experiment in Indonesia"
 
-This repository contains Julia code for replicating all main figures and tables of  "[Self-Targeting: Evidence from a Field Experiment in Indonesia](https://www.journals.uchicago.edu/doi/10.1086/685299)," by Vivi Alatas, Ririn Purnamasari, and Matthew Wai-Poi, Abhijit Banerjee and Benjamin A. Olken, and Rema Hanna. This code takes as input data these authors have graciously made public through [Harvard Dataverse](https://doi.org/10.7910/DVN/6ZUIUC).
+This repository contains Julia code for replicating all main figures and tables of  "[Self-Targeting: Evidence from a Field Experiment in Indonesia](https://www.journals.uchicago.edu/doi/10.1086/685299)," by Vivi Alatas, Ririn Purnamasari, Matthew Wai-Poi, Abhijit Banerjee, Benjamin A. Olken, and Rema Hanna. This code takes as input data these authors have graciously made public through [Harvard Dataverse](https://doi.org/10.7910/DVN/6ZUIUC).
 
 ## Usage
 
@@ -25,7 +25,7 @@ pkg> add DataFrames
 
 ## Disclaimer
 
-This repository is heavily ported from code available on Dataverse, originated by this papers' authors: Vivi Alatas, Ririn Purnamasari, and Matthew Wai-Poi, Abhijit Banerjee and Benjamin A. Olken, and Rema Hanna. Any reproduction, use, modification, and distribution of this code, in whole or in part, must retain this notice in the documentation associated with any distributed works. Any portions of the code attributed to third parties are subject to applicable third party licenses and rights. By your use of this code you accept this license and any applicable third party license.
+This repository is heavily ported from code available on Dataverse, originated by this papers' authors: Vivi Alatas, Ririn Purnamasari, Matthew Wai-Poi, Abhijit Banerjee, Benjamin A. Olken, and Rema Hanna. Any reproduction, use, modification, and distribution of this code, in whole or in part, must retain this notice in the documentation associated with any distributed works. Any portions of the code attributed to third parties are subject to applicable third party licenses and rights. By your use of this code you accept this license and any applicable third party license.
 
 ## More Aggressive Disclaimer
 
