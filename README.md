@@ -1,10 +1,12 @@
 # Replication of "Self Targeting: Evidence from a Field Experiment in Indonesia"
 
-This repository contains Julia code for replicating all main figures and tables of  "[Self-Targeting: Evidence from a Field Experiment in Indonesia](https://www.journals.uchicago.edu/doi/10.1086/685299)," by Vivi Alatas, Ririn Purnamasari, Matthew Wai-Poi, Abhijit Banerjee, Benjamin A. Olken, and Rema Hanna. This code takes as input data these authors have graciously made public through [Harvard Dataverse](https://doi.org/10.7910/DVN/6ZUIUC).
+This repository contains Julia code for replicating all main figures and tables of  "[Self-Targeting: Evidence from a Field Experiment in Indonesia](https://www.journals.uchicago.edu/doi/10.1086/685299)," by Vivi Alatas, Ririn Purnamasari, Matthew Wai-Poi, Abhijit Banerjee, Benjamin A. Olken, and Rema Hanna.
+
+This code takes as input data these authors have graciously made public through [Harvard Dataverse](https://doi.org/10.7910/DVN/6ZUIUC).
 
 ## Usage
 
-To run this code, first clone/download this repository into a directory of your choice. If the input files are not automatically downloaded into the `input/` directory, proceed to [Harvard Dataverse](https://doi.org/10.7910/DVN/6ZUIUC), download the replication codes, and copy over the following files into `input/`:
+To run the replication, first clone/download this repository into a directory of your choice. If the input files are not automatically downloaded into the `input/` directory, proceed to [Harvard Dataverse](https://doi.org/10.7910/DVN/6ZUIUC), download the replication codes, and copy over the following files into `input/`:
 - `costs.dta`
 - `matched_baseline.dta`
 - `matched_midline.dta`
@@ -17,7 +19,7 @@ Next, open the file `run_replication.jl`, and enter the location of your working
 
 This code is currently compatible with [Julia v1.6.3](https://julialang.org/downloads/#long_term_support_release). Be sure to also add the packages included at the top of `run_replication.jl`. :ok_woman:
 
-To install a package, enter the Julia REPL, type `]` to enter package manager, and then `add` any packages you need. It might be necessary to restart your Julia session once finished to access all updates. Example below:
+To install a package, enter the Julia REPL, type `]` to enter package manager, and then `add` any packages you need. Once finished, it might be necessary to restart your Julia session to access all updates. Example below:
 
 ```julia
 pkg> add DataFrames
