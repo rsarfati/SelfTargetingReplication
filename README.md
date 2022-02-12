@@ -29,4 +29,4 @@ This repository is heavily ported from code available on Dataverse, originated b
 
 ## More Aggressive Disclaimer
 
-Deviations from the Dataverse code owe to my own machinations; all aberrant results/bizarre output/suspicious inconsistencies with what is reported in the paper should be attributed to this graduate student's intellectual shortcomings and lousy sleep schedule.
+Deviations from the Dataverse code are the product of own machinations; all aberrant results/bizarre output/suspicious inconsistencies with what is reported in the paper should be attributed to this graduate student's intellectual shortcomings and lousy sleep schedule.
