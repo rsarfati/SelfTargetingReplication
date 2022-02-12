@@ -95,4 +95,4 @@ table_8()
 table_9()
 
 # Extension
-extension()
+table_extension()
