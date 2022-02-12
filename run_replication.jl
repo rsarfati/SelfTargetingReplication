@@ -94,5 +94,5 @@ figure_6()
 table_8()
 table_9()
 
-# Extension plots
-#extension()
+# Extension
+extension()

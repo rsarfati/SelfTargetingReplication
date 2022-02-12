@@ -664,3 +664,231 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = fals
     close(io)
     return bs_A_se
 end
+
+"""
+Extension!
+"""
+function extension_counterfactuals(df::DataFrame; N_grid = 100, store_output = false)
+    # Compute unobs. consumption (residual regressing log(obs cons) on PMT)
+    df = insertcols!(df, :unob_c => residuals(reg(df, @formula(logc ~ pmt)), df))
+    # Corresponds to "load data" step
+    df = compute_quantiles(df)
+
+    N, N_p = size(df, 1), 5 # No. of households, parameters to estimate
+    irate = 1.22
+    η_sd  = 0.275
+    δ_mom = 0.0
+    δ_y   = 1 / irate
+    μ_con_true = df.reg_const2[1]
+    μ_β_true   = df.reg_pmt2[1]
+    λ_con_true = df.reg_nofe_const[1]
+    λ_β_true   = df.reg_nofe_logcon[1]
+
+    δ = δ_y * (1 + δ_y + δ_y^2 + δ_y^3 + δ_y^4 + δ_y^5)
+    t = [-79681, 59715, 0.5049, 8.0448, -0.71673]
+
+    #df_show_hat = DataFrame([:hhid => df.hhid, :c_q => df.c_q])
+
+    # Column 2: Baseline estimate of show_hat
+    insertcols!(df, :col2 =>
+        showuphat(df, t, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
+
+    t[3] = 0.0
+    # Column 3: Half Standard deviation of epsilon
+    t_3 = [t[1], t[2]/2, t[3:5]...]
+    insertcols!(df, :col3 =>
+        showuphat(df, t_3, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
+    # Column 4: No epsilon variance
+    t_4 = [t[1], t[2]/1e10, t[3:5]...]
+    insertcols!(df, :col4 =>
+        showuphat(df, t_4, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
+    # Column 5: No differential travel cost
+    df_5 = deepcopy(df)
+    df_5.totcost_pc = df.totcost_smth_pc
+    insertcols!(df, :col5 =>
+        showuphat(df_5, t, η_sd, δ, μ_con_true, μ_β_true, λ_con_true, λ_β_true;
+                  N_grid = N_grid)[1])
+
+    # Column 6: (constant mu AND lambda)
+    mean_mu = 0.0967742 # Mean benefit receipt conditional on applying
+    λ_con_bel_cml = μ_con_true_cml = norminvcdf(mean_mu)
+    λ_β_bel_cml   = μ_β_true_cml   = 0.
+    df_6      = deepcopy(df)
+    df_6.FE  .= 0.
+    df_6.FE2 .= 0.
+    t_6 = [t[1:3]..., λ_con_bel_cml, λ_β_bel_cml]
+
+    insertcols!(df, :col6 => showuphat(df_6, t_6, η_sd, δ, μ_con_true_cml,
+                                     μ_β_true_cml, λ_con_true, λ_β_true;
+                                     N_grid = N_grid)[1])
+
+    if store_output
+        CSV.write("output/ext_showup.csv", df)
+    end
+    return df
+end
+
+###########################
+# Extension
+###########################
+function table_extension(; N_grid = 100, run_counterfactuals = true, 
+                         bootstrap_se = true, N_bs = 500)
+
+    # Load + clean full dataset, to be merged on later
+    df = DataFrame(load("input/matched_baseline.dta"))
+    df = insertcols!(df, :logc => log.(df.consumption))
+    df = rename!(df, [:closesubtreatment => :close1,
+                      :verypoor_povertyline1 => :below])
+    df = clean(df, [:hhid], Int64)
+    df = clean(df, [:logc, :close1, :below], F64)
+
+    # Define interactions for Panel B
+    insertcols!(df, :close_logc  =>  df.logc            .*  df.close1,
+                    :close_below =>  df.close1          .*  df.below,
+                    :close_above =>  df.close1          .* (df.below .== 0.0),
+                    :far_below   => (df.close1 .== 0.0) .*  df.below,
+                    :far_above   => (df.close1 .== 0.0) .* (df.below .== 0.0))
+
+    # Define outcomes and population cleaves
+    outcomes = [:showup, :col2, :col3, :col4, :col5, :col6]
+    groups   = [:far_above, :close_above, :far_below, :close_below]
+
+    # Load + clean input dataset for simulation
+    df_sim = CSV.read("input/MATLAB_Input.csv", DataFrame, header = true)
+    df_sim = insertcols!(df_sim, :logc => log.(df_sim.consumption))
+    df_sim = rename!(df_sim, [:closesubtreatment => :close, :consumption => :c,
+                              :pmtscore => :pmt])
+    df_sim = clean(df_sim, [:logc, :close, :getbenefit, :pmt, :distt, :c], F64)
+
+    # Run scenarios if one has not done so already, or wishes to do so again!
+    scen_file = "output/ext_showup.csv"
+    df_show = if run_counterfactuals | !isfile(scen_file)
+        extension_counterfactuals(deepcopy(df_sim); N_grid = N_grid,
+                                  store_output=true)
+    else
+        CSV.read(scen_file, DataFrame, header = true)
+    end
+    to_keep = Symbol.(filter(x->x ∉ names(df), names(df_show)))
+
+    ### Panel A:
+    function panel_A(df0::DataFrame, arg::Symbol)
+        return coef(glm_clust(eval(Meta.parse(
+                   "@formula($(string(arg)) ~ close + logc + close_logc)")),
+                   clean(df0, [arg], F64); clust = :hhea)[2])
+    end
+    ### Panel B:
+    function panel_B(df0::DataFrame)
+        r_9b = [zeros(length(outcomes)) for i=1:length(groups)]
+        for (i, g) in enumerate(groups)
+            for (j, out) in enumerate(outcomes)
+                df_tmp     = clean(df0, [g, out], F64)
+                r_9b[i][j] = 100 * sum(df_tmp[:,out] .* df_tmp[:,g]) / sum(df_tmp[:,g])
+            end
+        end
+        return r_9b
+    end
+    ### Panel C:
+    function panel_C(r_B::Vector)
+        poor_rich_far   = r_B[3] ./ r_B[1]
+        poor_rich_close = r_B[4] ./ r_B[2]
+        return [poor_rich_far, poor_rich_close, poor_rich_far .- poor_rich_close]
+    end
+
+    df_m = innerjoin(df, df_show[:, [to_keep..., :hhid]], on = :hhid)
+    r_9a = [panel_A(df_m, o) for o in outcomes]
+    r_9b = panel_B(df_m)
+    r_9c = panel_C(r_9b)
+
+    @save "output/ext_panel_A.jld2" r_9a
+    @save "output/ext_panel_B.jld2" r_9b
+    @save "output/ext_panel_C.jld2" r_9c
+
+    ### Bootstrap Panel A and C's standard errors
+    if bootstrap_se
+        # Draw random clusters, then include all obs. w/in cluster into index set
+        c_set        = unique(df_sim[:,:hhea])
+        bs_clust_idx = [sample(c_set, length(c_set); replace=true) for i=1:N_bs]
+        bs_idx       = [vcat([findall(isequal(c), df_sim[:,:hhea])
+                                for c in bs_clust]...) for bs_clust in bs_clust_idx]
+        bs_A_out  = Dict{Symbol,Matrix{F64}}([o =>
+                    Matrix{F64}(undef, N_bs, 3) for o in outcomes])
+        bs_C_out  = deepcopy(bs_A_out)
+        obs_count = 0
+
+        # Run bootstrap!
+        for i=1:N_bs
+            println("(Ext) Bootstrap iter. $i")
+            # Grab subsample, note # of observations in subsample
+            idx        = bs_idx[i]
+            obs_count += length(idx)
+            # Run counterfactual estimates on subsample
+            df_i   = counterfactuals_1(deepcopy(df_sim)[idx,:])
+            df_tmp = innerjoin(df, df_i[:, [to_keep..., :hhid]], on = :hhid)
+            rc_i   = panel_C(panel_B(df_tmp))
+            for (j,o) in enumerate(outcomes)
+                bs_A_out[o][i,:] = panel_A(df_tmp, o)[2:end] # Drop constant
+                bs_C_out[o][i,:] = [rc[j] for rc in rc_i]
+            end
+        end
+        # Compute standard errors + save output
+        bs_A_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_A_out[o], dims=1)) for o in outcomes])
+        bs_C_se = Dict{Symbol,Vector{F64}}([o => vec(std(bs_C_out[o], dims=1)) for o in outcomes])
+        @save "output/ext_panel_A_SE.jld2" bs_A_se
+        @save "output/ext_panel_C_SE.jld2" bs_C_se
+        @save "output/ext_obs_count.jld2" obs_count
+    end
+    bs_A_se   = load("output/ext_panel_A_SE.jld2")["bs_A_se"]
+    bs_C_se   = load("output/ext_panel_C_SE.jld2")["bs_C_se"]
+    obs_count = load("output/ext_obs_count.jld2")["obs_count"]
+    r_9a = [panel_A(df_m,o) for o in outcomes]
+    r_9b = panel_B(df_m)
+    r_9c = panel_C(r_9b)
+
+    # Directly write LaTeX table
+    io = open("output/tables/Extension.tex", "w")
+    write(io, "\\begin{tabular}{lcccccc}\\toprule" *
+              "& (Experimental) & \\multicolumn{5}{c}{(See Models Above)} \\\\"*
+              " \\cmidrule(lr){3-7} \n & (1) & (2) & (3) & (4) & (5) & (6)\\\\"*
+              "\\midrule\n & \\multicolumn{6}{c}{\\centering A. Logistic " *
+              "Regressions}\\\\\\cmidrule(lr){2-7} \n")
+    # Print Panel A
+    for (i, sym) in enumerate([labels["close"], labels["logc"], labels["close_logc"]])
+        @printf(io, "%s & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+                    vcat(sym, [r_9a[j][i+1] for j=1:length(outcomes)])...)
+        @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
+                    [bs_A_se[o][i] for o in outcomes]...)
+    end
+    write(io, "Observations & $(size(df_m,1)) " * repeat("& $obs_count", 5) * "\\\\")
+    write(io, "\\textit{p-value} & &")
+
+    # Compute p-values here
+    n1 = size(df_m, 1)
+    n2 = obs_count
+    @printf(io, " %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+        cdf.(Normal(), [abs(r_9a[1][4]-r_9a[j][4]) / sqrt((bs_A_se[:showup][3]^2 +
+                        bs_A_se[outcomes[j]][3]^2)/2) *
+                        sqrt(1/n1 + 1/n2) for j=2:length(outcomes)])...)
+    # Panel B
+    write(io, "\\midrule\n & \\multicolumn{6}{c}{\\centering B. Show " *
+    "Up Rates}\\\\\\cmidrule(lr){2-7} \n")
+    for (i, g) in enumerate(groups)
+        @printf(io, "%s & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f \\\\",
+                    vcat(labels[string(g)], r_9b[i])...)
+    end
+    # Panel C
+    write(io, "\\midrule\n & \\multicolumn{6}{c}{\\centering C. Show " *
+    "Up Rate Ratios}\\\\\\cmidrule(lr){2-7} \n")
+    for (i, sym) in enumerate(["Poor to rich ratio, far", "Poor to rich ratio, close",
+                               "Difference of ratios"])
+        @printf(io, "%s & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+                    vcat(sym, r_9c[i])...)
+        @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
+                    [bs_C_se[o][i] for o in outcomes]...)
+    end
+    write(io, "\\bottomrule\\end{tabular}")
+    close(io)
+    return bs_A_se
+end
