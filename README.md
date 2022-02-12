@@ -25,7 +25,7 @@ pkg> add DataFrames
 
 ## Disclaimer
 
-This repository is heavily ported from code available on Dataverse, originated by this papers' authors: Vivi Alatas, Ririn Purnamasari, Matthew Wai-Poi, Abhijit Banerjee, Benjamin A. Olken, and Rema Hanna. Any reproduction, use, modification, and distribution of this code, in whole or in part, must retain this notice in the documentation associated with any distributed works. Any portions of the code attributed to third parties are subject to applicable third party licenses and rights. By your use of this code you accept this license and any applicable third party license.
+This repository is heavily ported from code available on Dataverse, originated by this papers' authors: Vivi Alatas, Ririn Purnamasari, Matthew Wai-Poi, Abhijit Banerjee, Benjamin A. Olken, and Rema Hanna. Any reproduction, use, modification, and distribution of this code, in whole or in part, should cite their paper and/or data. Click here to learn about [data citation standards](https://dataverse.org/best-practices/data-citation). Any portions of the code attributed to third parties are subject to applicable third party licenses and rights. By your use of this code, you accept this license and any applicable third party license.
 
 ## More Aggressive Disclaimer
 
