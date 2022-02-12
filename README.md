@@ -17,7 +17,8 @@ Next, open the file `run_replication.jl`, and enter the location of your working
 
 This code is currently compatible with [Julia v1.6.3](https://julialang.org/downloads/#long_term_support_release). Be sure to also add the packages included at the top of `run_replication.jl`. :ok_woman:
 
-E.g.
+To install a package, enter the Julia REPL, type `]` to enter package manager, and then `add` any packages you need. It might be necessary to restart your Julia session once finished to access all updates. Example below:
+
 ```julia
 pkg> add DataFrames
 ```
