@@ -15,8 +15,9 @@ Next, open the file `run_replication.jl`, and enter the location of your working
 
 ## Versioning
 
-This code is currently compatible with [Julia v1.6.3](https://julialang.org/downloads/#long_term_support_release). Be sure to also add the packages included at the top of `run_replication.jl` (example below). :ok_woman:
+This code is currently compatible with [Julia v1.6.3](https://julialang.org/downloads/#long_term_support_release). Be sure to also add the packages included at the top of `run_replication.jl`. :ok_woman:
 
+E.g.
 ```julia
 pkg> add DataFrames
 ```
