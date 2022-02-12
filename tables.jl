@@ -636,15 +636,14 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
     end
     write(io, "Observations & $(size(df_m,1)) " * repeat("& $obs_count", 5) * "\\\\")
     write(io, "\\textit{p-value} & &")
+
+    # Compute p-values here
     n1 = size(df_m, 1)
     n2 = obs_count
     @printf(io, " %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
-        cdf.(Normal(), [(r_9a[1][4]-r_9a[j][4]) / (sqrt( ( (n1-1) * bs_A_se[:showup][3]^2 + 
-                         (n2-1) * bs_A_se[outcomes[j]][3]^2) / (n1+n2-2)) *
-                  sqrt(inv(n1) + inv(n2))) for j=2:length(outcomes)])...)
-
-    # Compute p-values here
-
+        cdf.(Normal(), [abs(r_9a[1][4]-r_9a[j][4]) / sqrt((bs_A_se[:showup][3]^2 +
+                        bs_A_se[outcomes[j]][3]^2)/2) *
+                        sqrt(1/n1 + 1/n2) for j=2:length(outcomes)])...)
     # Panel B
     write(io, "\\midrule\n & \\multicolumn{6}{c}{\\centering B. Show " *
     "Up Rates}\\\\\\cmidrule(lr){2-7} \n")
@@ -663,10 +662,15 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
         @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
                     [bs_C_se[o][i] for o in outcomes]...)
     end
+    write(io, "\\textit{p-value} & &")
+    # Compute p-values here
+    # @printf(io, " %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+    #     cdf.(Normal(), [abs(r_9c[3][1]-r_9c[3][j]) / sqrt((bs_C_se[:showup][3]^2 +
+    #                     bs_C_se[outcomes[j]][3]^2)/2) *
+    #                     sqrt(1/n1 + 1/n2) for j=2:length(outcomes)])...)
 
     write(io, "\\bottomrule\\end{tabular}")
     close(io)
-
     return bs_A_se
 end
 
