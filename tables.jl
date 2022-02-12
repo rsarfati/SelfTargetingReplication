@@ -619,12 +619,11 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
     r_9a = [panel_A(df_m,o) for o in outcomes]
     r_9b = panel_B(df_m)
     r_9c = panel_C(r_9b)
+
     # Directly write LaTeX table
     io = open("output/tables/Table9.tex", "w")
     write(io, "\\begin{tabular}{lcccccc}\\toprule" *
-              " &\\multicolumn{1}{p{0.18\\linewidth}}{\\centering Show-up Rate" *
-              "\\\\(Experimental)}&\\multicolumn{5}{c}{\\centering Predicted Show-up Probability" *
-              " \\\\ (See Models Above)} \\cmidrule(lr){3-7}" *
+              " & (Experimental) \\multicolumn{5}{c}{(See Models Above)} \\\\ \\cmidrule(lr){3-7} \n" *
               "& (1) & (2) & (3) & (4) & (5) & (6) \\\\ " *
               "\\midrule\n & \\multicolumn{6}{c}{\\centering A. Logistic " *
               "Regressions}\\\\\\cmidrule(lr){2-7} \n")
@@ -633,9 +632,17 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
         @printf(io, "%s & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
                     vcat(sym, [r_9a[j][i+1] for j=1:length(outcomes)])...)
         @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
-                    [bs_C_se[o][i] for o in outcomes]...)
+                    [bs_A_se[o][i] for o in outcomes]...)
     end
     write(io, "Observations & $(size(df_m,1)) " * repeat("& $obs_count", 5) * "\\\\")
+    write(io, "\\textit{p-value} & &")
+    n1 = size(df_m, 1)
+    n2 = obs_count
+    @printf(io, " %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+        cdf.(Normal(), [(r_9a[1][4]-r_9a[j][4]) / (sqrt( ( (n1-1) * bs_A_se[:showup][3]^2 + 
+                         (n2-1) * bs_A_se[outcomes[j]][3]^2) / (n1+n2-2)) *
+                  sqrt(inv(n1) + inv(n2))) for j=2:length(outcomes)])...)
+
     # Compute p-values here
 
     # Panel B
@@ -643,10 +650,20 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
     "Up Rates}\\\\\\cmidrule(lr){2-7} \n")
     for (i, g) in enumerate(groups)
         @printf(io, "%s & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f \\\\",
-                    vcat(labels[str(g)], r_9b[i])...)
+                    vcat(labels[string(g)], r_9b[i])...)
     end
-    #@printf(io, " %d &  %d & %0.2f & % 0.2f & %0.2f \\\\", t_est[:,1]...)
-    #@printf(io, "(%d) & (%d) & (%0.2f) & (%0.2f) & (%0.2f)\\\\", bs_SE...)
+
+    # Print Panel C
+    write(io, "\\midrule\n & \\multicolumn{6}{c}{\\centering C. Show " *
+    "Up Rate Ratios}\\\\\\cmidrule(lr){2-7} \n")
+    for (i, sym) in enumerate(["Poor to rich ratio, far", "Poor to rich ratio, close",
+                               "Difference of ratios"])
+        @printf(io, "%s & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
+                    vcat(sym, r_9c[i])...)
+        @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
+                    [bs_C_se[o][i] for o in outcomes]...)
+    end
+
     write(io, "\\bottomrule\\end{tabular}")
     close(io)
 
