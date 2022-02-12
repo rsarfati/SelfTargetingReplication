@@ -106,15 +106,19 @@ function showuphat(df::DataFrame, t::Vector{T}, η_sd::T, δ::T, μ_con_true::T,
     function util(η::F64)
         # Present Utility
         relu_2day = (df.c .* exp.(-η) - df.totcost_pc .* exp.(-η) +
-                    (1 .- 1 .* exp.(-η)) .* df.moneycost) - (df.c .* exp.(-η))
+                    (1 .- exp.(-η)) .* df.moneycost) - (df.c .* exp.(-η))
         # Future Utility
         relu_2mor = (df.c .* exp.(-η) .+ df.benefit) - (df.c .* exp.(-η))
-
+        # μ(y^o) and λ(y) functions
         Mu = cdf.(Normal(), μ_con_true .+ df.FE2 .+ μ_β_true * (df.pmt .- η))
         Λ  = cdf.(Normal(), λ_con_bel  .+ λ_β_bel * (df.logc .- η))
-
-        prob_s = (1 .- inv.(1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ A)))
-        prob_u = (1 .- inv.(1 .+ exp.(β .* (relu_2day .+ 12 .* δ .* Λ  .* relu_2mor) .+ A)))
+        # Probability sophisticated shows up
+        prob_s = 1 .- inv.(1 .+ exp.(β .*
+                                (relu_2day .+ 12 .* δ .* Mu .* relu_2mor) .+ A))
+        # Probability unsophisticated shows up
+        prob_u = 1 .- inv.(1 .+ exp.(β .*
+                                (relu_2day .+ 12 .* δ .* Λ  .* relu_2mor) .+ A))
+        # Average showup, weighted by probability of eta!
         return (α .* prob_s .+ (1 - α) .* prob_u) .* pdf(Normal(0, η_sd), η)
     end
 
@@ -131,7 +135,6 @@ function showuphat(df::DataFrame, t::Vector{T}, η_sd::T, δ::T, μ_con_true::T,
     coef  = (1. / σ2) * (X' * X) \ X' * μ_inv
     # Compute induced λ
     ind_λ = cdf.(Normal(), hcat(ones(N), df.logc) * coef)
-
     return showup_hat, ind_λ
 end
 
@@ -184,6 +187,9 @@ function GMM_problem(df0::DataFrame, danual::T; δ_mom::T=0.0, irate::T=1.22,
     # This function exists purely so we aren't calling showuphat/compute_moments
     # twice when we don't need to! Also, acts as a function closure on df.
     function gAg(x::Vector{F64}, A::Matrix{F64})
+        if x[2] < 0.0
+            return Inf
+        end
         g_eval = mean(g(x, df), dims=1)
         return (g_eval * A * g_eval')[1]
     end

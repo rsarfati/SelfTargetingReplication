@@ -507,9 +507,8 @@ end
 ###########################
 # Table 9: Modeled effects of time and distance costs on show-up rates (416)
 ###########################
-function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true,
+function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = false,
                  N_bs = 1000)
-                 #panel_A = true, panel_B = true, panel_C = true)
 
     # Load + clean full dataset, to be merged on later
     df = DataFrame(load("input/matched_baseline.dta"))
@@ -623,8 +622,8 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
     # Directly write LaTeX table
     io = open("output/tables/Table9.tex", "w")
     write(io, "\\begin{tabular}{lcccccc}\\toprule" *
-              "& (Experimental) & \\multicolumn{5}{c}{(See Models Above)} \\\\ \\cmidrule(lr){3-7} \n" *
-              "& (1) & (2) & (3) & (4) & (5) & (6) \\\\ " *
+              "& (Experimental) & \\multicolumn{5}{c}{(See Models Above)} \\\\"*
+              " \\cmidrule(lr){3-7} \n & (1) & (2) & (3) & (4) & (5) & (6)\\\\"*
               "\\midrule\n & \\multicolumn{6}{c}{\\centering A. Logistic " *
               "Regressions}\\\\\\cmidrule(lr){2-7} \n")
     # Print Panel A
@@ -651,8 +650,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
         @printf(io, "%s & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f & %0.2f \\\\",
                     vcat(labels[string(g)], r_9b[i])...)
     end
-
-    # Print Panel C
+    # Panel C
     write(io, "\\midrule\n & \\multicolumn{6}{c}{\\centering C. Show " *
     "Up Rate Ratios}\\\\\\cmidrule(lr){2-7} \n")
     for (i, sym) in enumerate(["Poor to rich ratio, far", "Poor to rich ratio, close",
@@ -662,18 +660,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
         @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
                     [bs_C_se[o][i] for o in outcomes]...)
     end
-    # write(io, "\\textit{p-value} & &")
-    # Compute p-values here
-    # @printf(io, " %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
-    #     cdf.(Normal(), [abs(r_9c[3][1]-r_9c[3][j]) / sqrt((bs_C_se[:showup][3]^2 +
-    #                     bs_C_se[outcomes[j]][3]^2)/2) *
-    #                     sqrt(1/n1 + 1/n2) for j=2:length(outcomes)])...)
-
     write(io, "\\bottomrule\\end{tabular}")
     close(io)
     return bs_A_se
 end
-
-###########################
-# Table 10: Impact of alternative testing approaches on poverty gap (424)
-###########################

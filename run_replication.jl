@@ -92,5 +92,7 @@ figure_6()
 
 ### Run GMM estimation, generate remaining tables
 table_8()
-# table_9()
-# table_10()
+table_9()
+
+# Extension plots
+#extension()
