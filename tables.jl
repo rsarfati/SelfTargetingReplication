@@ -623,7 +623,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
     # Directly write LaTeX table
     io = open("output/tables/Table9.tex", "w")
     write(io, "\\begin{tabular}{lcccccc}\\toprule" *
-              " & (Experimental) \\multicolumn{5}{c}{(See Models Above)} \\\\ \\cmidrule(lr){3-7} \n" *
+              "& (Experimental) & \\multicolumn{5}{c}{(See Models Above)} \\\\ \\cmidrule(lr){3-7} \n" *
               "& (1) & (2) & (3) & (4) & (5) & (6) \\\\ " *
               "\\midrule\n & \\multicolumn{6}{c}{\\centering A. Logistic " *
               "Regressions}\\\\\\cmidrule(lr){2-7} \n")
@@ -662,7 +662,7 @@ function table_9(; N_grid = 100, run_counterfactuals = true, bootstrap_se = true
         @printf(io, " & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) & (%0.3f) \\\\",
                     [bs_C_se[o][i] for o in outcomes]...)
     end
-    write(io, "\\textit{p-value} & &")
+    # write(io, "\\textit{p-value} & &")
     # Compute p-values here
     # @printf(io, " %0.3f & %0.3f & %0.3f & %0.3f & %0.3f \\\\",
     #     cdf.(Normal(), [abs(r_9c[3][1]-r_9c[3][j]) / sqrt((bs_C_se[:showup][3]^2 +
